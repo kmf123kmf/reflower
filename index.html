@@ -157,8 +157,10 @@ body.debug #debugBox { display: block; }
   <h4>Reading</h4>
   <label>Theme <select id="setTheme"><option value="light">Light</option><option value="sepia">Sepia</option><option value="dark">Dark</option></select></label>
   <label>Font <select id="setFont">
-    <option value="serif">Georgia</option><option value="book">Palatino</option><option value="modern">Cambria</option>
-    <option value="sans">Sans-serif</option><option value="mono">Monospace</option></select></label>
+    <optgroup label="Serif"><option value="serif">Constantia</option><option value="modern">Sitka Text</option><option value="book">Palatino</option></optgroup>
+    <optgroup label="Sans-serif"><option value="sans">Segoe UI</option><option value="candara">Candara</option><option value="corbel">Corbel</option>
+      <option value="calibri">Calibri</option><option value="verdana">Verdana</option><option value="trebuchet">Trebuchet</option><option value="noto">Noto Sans</option></optgroup>
+    <optgroup label="Other"><option value="mono">Monospace</option></optgroup></select></label>
   <label>Size <input type="range" id="setSize" min="13" max="30" step="1"></label>
   <label>Line height <input type="range" id="setLh" min="1.2" max="2.2" step="0.05"></label>
   <label>Alignment <select id="setAlign"><option value="left">Left</option><option value="justify">Justified</option></select></label>
@@ -1089,13 +1091,19 @@ const Reflow = (() => {
   const $ = s => document.querySelector(s);
   const stage = $('#stage'), pane = $('#pane'), viewport = $('#viewport'), content = $('#content');
   const FONTS = {
-    serif: 'Georgia, "Iowan Old Style", "Times New Roman", serif',
+    serif: 'Constantia, "Iowan Old Style", "Palatino Linotype", Georgia, serif',
     book: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
-    modern: 'Cambria, Charter, "Bitstream Charter", Georgia, serif',
+    modern: '"Sitka Text", Constantia, "Iowan Old Style", Georgia, serif',
     sans: '"Segoe UI", system-ui, -apple-system, Roboto, sans-serif',
+    candara: 'Candara, "Gill Sans", Optima, "Segoe UI", sans-serif',
+    corbel: 'Corbel, "Lucida Grande", "Segoe UI", sans-serif',
+    calibri: 'Calibri, Carlito, "Helvetica Neue", "Segoe UI", sans-serif',
+    verdana: 'Verdana, "DejaVu Sans", Geneva, sans-serif',
+    trebuchet: '"Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif',
+    noto: '"Noto Sans", "Open Sans", "Segoe UI", sans-serif',
     mono: 'Consolas, "Cascadia Mono", Menlo, monospace',
   };
-  const DEFAULTS = { theme: 'light', font: 'serif', fs: 19, lh: 1.6, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
+  const DEFAULTS = { theme: 'light', font: 'candara', fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
   const S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('reflower.settings') || '{}'));
   S.widths = Object.assign({}, DEFAULTS.widths, S.widths);
   const save = () => localStorage.setItem('reflower.settings', JSON.stringify(S));
@@ -1426,7 +1434,7 @@ const Reflow = (() => {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  const EXPORT_CSS = `body{background:#f4f1ea;margin:0;color:#2b2a27}article{max-width:38em;margin:2em auto;padding:3em 3.5em;background:#fffdf8;font:19px/1.6 Georgia,serif;box-shadow:0 2px 18px rgba(0,0,0,.08)}
+  const exportCSS = () => `body{background:#f4f1ea;margin:0;color:#2b2a27}article{max-width:38em;margin:2em auto;padding:3em 3.5em;background:#fffdf8;font:${S.fs}px/${S.lh} ${FONTS[S.font] || FONTS.serif};box-shadow:0 2px 18px rgba(0,0,0,.08)}
 p{margin:0 0 .85em}.doc-title{text-align:center;margin-bottom:1.6em}.doc-title h1{font-weight:normal;font-size:2em;margin:0 0 .25em}.subtitle{font-style:italic;margin:0}
 .byline{text-align:center;font-style:italic;margin-bottom:1.4em}.meta{font-size:.85em;color:#8a857b;border-left:3px solid #ddd;padding-left:.8em;margin-bottom:1.2em}
 h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 .sub{display:block;font-size:.72em;font-style:italic;margin-top:.35em}
@@ -1438,7 +1446,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     const { html } = Reflow.toHTML(doc.res.nodes, { smart: S.smart });
     const title = (doc.res.stats.title || baseName()).replace(/</g, '&lt;');
     download(baseName() + '.html', 'text/html;charset=utf-8',
-      `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${EXPORT_CSS}</style></head>\n<body><article>\n${html}\n</article></body></html>\n`);
+      `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${exportCSS()}</style></head>\n<body><article>\n${html}\n</article></body></html>\n`);
   });
 
   /* ---------------- input: keys, wheel, clicks ---------------- */
