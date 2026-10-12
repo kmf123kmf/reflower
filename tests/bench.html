@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Reflower benchmark</title>
+<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>
+</head>
+<body>
+<pre id="out"></pre>
+<iframe id="f" src="../index.html" onload="bench()"></iframe>
+<script>
+// Headless: chrome --headless=new --window-size=1400,900 --dump-dom http://127.0.0.1:8765/tests/bench.html
+// Everything is synchronous so it finishes before the page load event (no virtual time needed).
+function bench() {
+  const out = [];
+  try {
+    const x = new XMLHttpRequest();
+    x.open('GET', '../samples/real/pg1342.txt', false); x.send();
+    // story body only, so repeated copies are not folded away as Gutenberg boilerplate
+    const full = x.responseText;
+    const base = full.slice(full.indexOf('\n', full.indexOf('*** START OF')) + 1, full.indexOf('*** END OF'));
+    const w = document.getElementById('f').contentWindow, app = w.ReflowerApp, Reflow = w.eval('Reflow');
+    const doc = w.document, now = () => performance.now();
+    const time = fn => { const t = now(); fn(); doc.body.offsetHeight; return now() - t; };
+    const median = a => [...a].sort((p, q) => p - q)[Math.floor(a.length / 2)];
+    const pad = (v, n = 8) => String(typeof v === 'number' ? v.toFixed(0) : v).padStart(n);
+    out.push(['size KB', 'lines', 'analyze', 'toHTML', 'load+scroll', '->page', 'pages', '->spread', 'turn', '->raw', '->reflow'].map(h => pad(h, 11)).join(''));
+    for (const mult of [0.1, 0.25, 0.5, 1, 2, 4, 8]) {
+      const text = mult < 1 ? base.slice(0, Math.floor(base.length * mult)) : Array(mult).fill(base).join('\n\n');
+      const runs = mult <= 1 ? 3 : 1;
+      const an = [], th = [];
+      let res;
+      for (let r = 0; r < runs; r++) {
+        an.push(time(() => { res = Reflow.analyze(text); }));
+        th.push(time(() => Reflow.toHTML(res.nodes, { smart: true })));
+      }
+      app.setLayout('scroll'); app.setView('reflow');
+      const load = time(() => app.loadText(text, 'bench.txt'));
+      const page = time(() => app.setLayout('page'));
+      const pages = app.state.pages;
+      const spread = time(() => app.setLayout('spread'));
+      const turn = time(() => app.setPage(Math.floor(app.state.pages / 2), false));
+      const raw = time(() => app.setView('raw'));
+      const back = time(() => app.setView('reflow'));
+      out.push([text.length / 1024, res.lines.length, median(an), median(th), load, page, pages, spread, turn, raw, back].map(v => pad(v, 11)).join(''));
+    }
+    out.push('\n(times in ms; analyze/toHTML are engine-only; other columns include DOM render + layout)');
+  } catch (e) { out.push('ERROR ' + e.stack); }
+  document.getElementById('out').textContent = out.join('\n');
+}
+</script>
+</body>
+</html>

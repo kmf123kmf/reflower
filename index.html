@@ -818,7 +818,7 @@ const Reflow = (() => {
 
     // Project Gutenberg header / licence boilerplate is folded away when rendering
     const pgStart = orig.findIndex(l => PG_START_RE.test(l.text));
-    const pgEnd = orig.findIndex(l => PG_END_RE.test(l.text));
+    const pgEnd = orig.findLastIndex(l => PG_END_RE.test(l.text));
     if (pgStart >= 0 || pgEnd >= 0) {
       nodes.forEach(nd => {
         if (pgStart >= 0 && nd.src[1] <= pgStart) nd.boiler = 'Project Gutenberg header';
