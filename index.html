@@ -43,7 +43,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #exportMenu button { display: block; width: 100%; margin: 4px 0; text-align: left; }
 
 /* ---------- stage / pane ---------- */
-#stage { flex: 1; min-height: 0; position: relative; overflow-y: auto; outline: none; }
+#stage { flex: 1; min-height: 0; position: relative; overflow-y: auto; overflow-anchor: none; outline: none; }
 #pane { position: relative; width: min(var(--pane-w), calc(100% - 24px)); margin: 16px auto; background: var(--paper); box-shadow: var(--shadow); border-radius: 4px; padding: 48px 56px 56px; min-height: calc(100% - 32px); }
 .handle { position: absolute; top: 0; bottom: 0; width: 14px; cursor: ew-resize; z-index: 5; touch-action: none; }
 .handle.l { left: -7px; } .handle.r { right: -7px; }
@@ -67,6 +67,16 @@ body.spread #viewport::after { content: ""; position: absolute; top: 0; bottom: 
 #dropHint h1 { font-weight: normal; color: var(--fg); margin: 0 0 .4em; }
 #dropHint .box { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; margin-top: 24px; cursor: pointer; }
 #dropHint .box:hover { border-color: var(--accent); color: var(--fg); }
+#recent { max-width: 460px; margin: 28px auto 0; text-align: left; font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; }
+#recent h4 { margin: 0 0 6px; font-size: 12px; font-weight: normal; text-transform: uppercase; letter-spacing: .06em; }
+#recent .item { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+#recent .item:hover { border-color: var(--accent); }
+#recent .open { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: baseline; background: none; border: 0; padding: 9px 12px; font: inherit; color: var(--fg); text-align: left; cursor: pointer; }
+#recent .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recent .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+#recent .forget, #recent .forgetAll { background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; padding: 9px 12px; }
+#recent .forget:hover, #recent .forgetAll:hover { color: var(--fg); }
+#recent .forgetAll { padding: 2px 0; font-size: 12px; text-decoration: underline; }
 body.dragging #pane { outline: 3px dashed var(--accent); outline-offset: 6px; }
 
 /* ---------- reading content ---------- */
@@ -187,6 +197,7 @@ body.debug #debugBox { display: block; }
           <h1>Reflower</h1>
           <div>Comfortable reading for hard-wrapped text files.</div>
           <div class="box" id="dropBox">Drop a <b>.txt</b> or <b>.rtf</b> file here, click to choose one, or paste text with Ctrl+V</div>
+          <div id="recent"></div>
         </div>
       </article>
     </div>
@@ -1135,7 +1146,7 @@ const Reflow = (() => {
   }
 
   const bindSetting = (id, key, parse, rerender) => $(id).addEventListener('input', e => {
-    const a = captureAnchor();
+    const a = holdAnchor();
     S[key] = parse(e.target);
     save(); applySettings();
     if (rerender) render(a); else relayout(a);
@@ -1159,19 +1170,146 @@ const Reflow = (() => {
   }
 
   async function openFile(file) {
-    const text = decode(await file.arrayBuffer());
-    if (/\.rtf$/i.test(file.name) || /^\s*\{\\rtf/.test(text.slice(0, 32))) {
-      const r = Reflow.fromRTF(text);
-      loadText(r.text, file.name, { hints: r.hints, metaTitle: r.title, source: 'RTF' });
-    } else loadText(text, file.name);
+    openSource(decode(await file.arrayBuffer()), file.name);
+  }
+
+  // `src` is the file as decoded (RTF still raw): Recent keeps it, and its hash keys the saved position.
+  function openSource(src, name) {
+    const key = hashText(src);
+    if (/\.rtf$/i.test(name) || /^\s*\{\\rtf/.test(src.slice(0, 32))) {
+      const r = Reflow.fromRTF(src);
+      loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF' });
+    } else loadText(src, name, { key });
+    Recent.add({ key, name, src, title: doc.metaTitle || doc.res.stats.title || '' });
   }
 
   function loadText(text, name, extra = {}) {
+    savePosNow();
     doc = { name, text, ...extra };
+    if (!doc.key) doc.key = hashText(text);
     analyze();
     render(null);
+    const a = savedAnchor();
+    if (a) { relayout(a); held = a; }
     stage.focus();
   }
+
+  function hashText(t) { // FNV-1a plus length, so collisions are vanishingly rare
+    let h = 0x811c9dc5;
+    for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(36) + '-' + t.length.toString(36);
+  }
+
+  /* ---------------- reading positions (per file, localStorage) ---------------- */
+  // Stored as the anchor element's first source line + character offset into it, so it survives any
+  // font/size/layout change. { [key]: { line, off, view, pct, name, t } }, newest 200 kept.
+  const POS_KEY = 'reflower.positions';
+  const loadPositions = () => { try { return JSON.parse(localStorage.getItem(POS_KEY) || '{}'); } catch { return {}; } };
+  let posTimer = 0;
+  function queueSavePos() { clearTimeout(posTimer); posTimer = setTimeout(savePosNow, 400); }
+  function savePosNow() {
+    clearTimeout(posTimer);
+    if (!doc || !doc.key) return;
+    const a = currentAnchor();
+    if (!a || !a.el) return;
+    let off = 0;
+    if (a.caret && a.el.contains(a.caret.node)) {
+      const r = document.createRange();
+      r.setStart(a.el, 0); r.setEnd(a.caret.node, a.caret.offset);
+      off = r.toString().length;
+    }
+    const max = stage.scrollHeight - stage.clientHeight;
+    const pct = isPaged() ? (pages > 1 ? page / (pages - 1) : 0) : (max > 0 ? stage.scrollTop / max : 0);
+    const all = loadPositions();
+    all[doc.key] = { line: a.line, off, view, pct: Math.round(pct * 1000) / 1000, name: doc.name, t: Date.now() };
+    Object.keys(all).sort((x, y) => all[y].t - all[x].t).slice(200).forEach(k => delete all[k]);
+    try { localStorage.setItem(POS_KEY, JSON.stringify(all)); } catch { /* quota: skip */ }
+  }
+  function savedAnchor() {
+    const p = loadPositions()[doc.key];
+    if (!p) return null;
+    let el = null;
+    if (view === 'raw') el = content.querySelector(`[data-l="${p.line}"]`);
+    else for (const c of content.children) {
+      if (c.dataset.s == null) continue;
+      if (+c.dataset.s <= p.line && +c.dataset.e >= p.line) { el = c; break; }
+      if (+c.dataset.s > p.line) { el = c; break; }
+    }
+    if (!el) return null;
+    let caret = null;
+    const startLine = el.dataset.l != null ? +el.dataset.l : +el.dataset.s;
+    if (p.view === view && startLine === p.line && p.off > 0) { // walk to the character offset
+      const it = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let n, left = p.off;
+      while ((n = it.nextNode())) { if (left < n.length) { caret = { node: n, offset: left }; break; } left -= n.length; }
+    }
+    return { caret, line: startLine, el };
+  }
+  window.addEventListener('pagehide', savePosNow);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) savePosNow(); });
+
+  /* ---------------- recent files (IndexedDB copy of the source text) ---------------- */
+  // Nothing reopens automatically: the start screen lists recent files and the reader picks one.
+  const Recent = (() => {
+    const MAX = 8, MAX_CHARS = 30e6;
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('reflower', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'key' });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    }));
+    const tx = async (mode, fn) => {
+      const d = await db();
+      return new Promise((res, rej) => {
+        const t = d.transaction('files', mode), req = fn(t.objectStore('files'));
+        t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error);
+      });
+    };
+    const list = async () => ((await tx('readonly', s => s.getAll())) || []).sort((a, b) => b.t - a.t);
+    return {
+      list,
+      get: key => tx('readonly', s => s.get(key)),
+      async add(rec) {
+        try {
+          if (rec.src.length > MAX_CHARS) return;
+          await tx('readwrite', s => s.put({ ...rec, t: Date.now() }));
+          const old = (await list()).slice(MAX);
+          if (old.length) await tx('readwrite', s => old.forEach(r => s.delete(r.key)));
+        } catch { /* storage unavailable (e.g. private window): Recent just stays empty */ }
+      },
+      forget: key => tx('readwrite', s => s.delete(key)),
+      clear: () => tx('readwrite', s => s.clear()),
+    };
+  })();
+
+  async function showRecent() {
+    const box = $('#recent');
+    if (!box) return;
+    let items = [];
+    try { items = await Recent.list(); } catch { /* no IndexedDB */ }
+    if (!items.length) { box.innerHTML = ''; return; }
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const pos = loadPositions();
+    const ago = t => { const m = (Date.now() - t) / 6e4; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+    box.innerHTML = '<h4>Continue reading</h4>' + items.map(r => {
+      const p = pos[r.key];
+      return `<div class="item"><button class="open" data-key="${esc(r.key)}" title="Reopen ${esc(r.name)}"><span class="name">${esc(r.title || r.name)}</span>`
+        + `<span class="when">${p ? Math.round(p.pct * 100) + '% · ' : ''}${ago(p ? Math.max(p.t, r.t) : r.t)}</span></button>`
+        + `<button class="forget" data-key="${esc(r.key)}" title="Forget this file">✕</button></div>`;
+    }).join('') + '<button class="forgetAll">Forget all recent files</button>';
+  }
+  $('#recent').addEventListener('click', async e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    e.stopPropagation();
+    if (b.classList.contains('open')) {
+      const r = await Recent.get(b.dataset.key);
+      if (r) openSource(r.src, r.name); else showRecent();
+    } else {
+      if (b.classList.contains('forgetAll')) await Recent.clear(); else await Recent.forget(b.dataset.key);
+      showRecent();
+    }
+  });
 
   function analyze() {
     const t0 = performance.now();
@@ -1203,6 +1341,7 @@ const Reflow = (() => {
     document.title = (doc.metaTitle || doc.res.stats.title || doc.name) + ' — Reflower';
     renderToc();
     renderDebug();
+    held = null;
     relayout(anchor);
     if (!anchor) { stage.scrollTop = 0; setPage(0, false); }
   }
@@ -1238,7 +1377,7 @@ const Reflow = (() => {
     $('#dbgWidth').addEventListener('change', e => {
       const v = parseInt(e.target.value, 10);
       widthOverride = v >= 20 ? v : null;
-      const a = captureAnchor();
+      const a = holdAnchor();
       analyze(); render(a);
     });
   }
@@ -1261,10 +1400,11 @@ const Reflow = (() => {
       const sent = $('#endSentinel');
       pages = sent ? Math.max(1, Math.floor((sent.getBoundingClientRect().left - content.getBoundingClientRect().left) / stride) + 1) : 1;
       if (anchor) page = pageOfAnchor(anchor);
-      setPage(page, false);
+      restoring = true; setPage(page, false); restoring = false;
     } else if (anchor) {
       restoreScrollAnchor(anchor);
     }
+    ownScrollTop = stage.scrollTop;
     content.offsetHeight; // flush before re-enabling transitions
     content.classList.remove('noanim');
     updateIndicator();
@@ -1272,6 +1412,7 @@ const Reflow = (() => {
 
   function setPage(p, animate = true) {
     if (!isPaged()) return;
+    if (!restoring) held = null;
     page = Math.max(0, Math.min(pages - 1, p));
     if (!animate) content.classList.add('noanim');
     content.style.transform = `translateX(${-page * stride}px)`;
@@ -1280,6 +1421,7 @@ const Reflow = (() => {
   }
 
   function updateIndicator() {
+    if (doc) queueSavePos();
     let txt = '';
     if (doc) {
       if (isPaged()) txt = `Page ${page + 1} / ${pages}`;
@@ -1323,6 +1465,16 @@ const Reflow = (() => {
     return { caret, line, el };
   }
 
+  // Back-to-back layout changes (settings, slider drags, resizes) reuse one held anchor, so the
+  // position doesn't ratchet backwards as each new layout puts the anchor mid-page or below a
+  // margin. Any real navigation (page turn, user scroll, re-render) releases it.
+  let held = null, restoring = false, ownScrollTop = 0;
+  function currentAnchor() {
+    if (held && !isPaged() && Math.abs(stage.scrollTop - ownScrollTop) > 1) held = null; // reader scrolled since
+    return held || captureAnchor();
+  }
+  function holdAnchor() { return (held = currentAnchor()); }
+
   function anchorRect(a) {
     if (a.caret && a.caret.node.isConnected) {
       try {
@@ -1361,7 +1513,7 @@ const Reflow = (() => {
 
   let rafId = 0, pendingAnchor = null;
   function scheduleRelayout(anchor) {
-    if (!pendingAnchor) pendingAnchor = anchor || captureAnchor();
+    if (!pendingAnchor) pendingAnchor = anchor || holdAnchor();
     cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(() => { const a = pendingAnchor; pendingAnchor = null; relayout(a); });
   }
@@ -1372,7 +1524,7 @@ const Reflow = (() => {
   document.querySelectorAll('.handle').forEach(h => {
     h.addEventListener('pointerdown', e => {
       e.preventDefault();
-      const side = h.dataset.side, startX = e.clientX, startW = pane.getBoundingClientRect().width, anchor = captureAnchor();
+      const side = h.dataset.side, startX = e.clientX, startW = pane.getBoundingClientRect().width, anchor = holdAnchor();
       h.setPointerCapture(e.pointerId);
       h.classList.add('active');
       const move = ev => {
@@ -1388,19 +1540,18 @@ const Reflow = (() => {
 
   /* ---------------- toolbar ---------------- */
   function setLayout(l) {
-    const a = captureAnchor();
+    const a = holdAnchor();
     S.layout = l; save(); applySettings(); relayout(a);
   }
   function setView(v) {
     if (v === view) return;
-    const a = captureAnchor();
+    const h = holdAnchor(), a = h && { ...h, caret: null, el: null };
     view = v;
-    if (a) { a.caret = null; a.el = null; }
     render(a);
   }
   document.querySelectorAll('#layoutSeg button').forEach(b => b.addEventListener('click', () => setLayout(b.dataset.layout)));
   document.querySelectorAll('#viewSeg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
-  $('#btnDebug').addEventListener('click', () => { const a = captureAnchor(); debug = !debug; applySettings(); relayout(a); });
+  $('#btnDebug').addEventListener('click', () => { const a = holdAnchor(); debug = !debug; applySettings(); relayout(a); });
   $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
   $('#dropBox').addEventListener('click', () => $('#fileInput').click());
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
@@ -1508,11 +1659,12 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   document.addEventListener('paste', e => {
     if (e.target.closest('input, textarea')) return;
     const t = e.clipboardData.getData('text/plain');
-    if (t && t.trim()) { e.preventDefault(); loadText(t, 'Pasted text'); }
+    if (t && t.trim()) { e.preventDefault(); openSource(t, 'Pasted text'); }
   });
 
   applySettings();
   relayout(null);
+  showRecent();
   window.ReflowerApp = { loadText, setLayout, setView, setPage, get state() { return { page, pages, view, layout: S.layout, doc }; } };
 })();
 </script>
