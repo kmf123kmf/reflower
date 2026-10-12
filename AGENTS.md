@@ -1,7 +1,11 @@
 # Reflower
 
 Single-file local web app (`index.html`, no dependencies, works from `file://`) that reflows
-hard-wrapped story text files. Drag a `.txt` onto the page.
+hard-wrapped story text files. Drag a `.txt` or `.rtf` onto the page.
+
+RTF support: `Reflow.fromRTF(src)` converts RTF to plain text (bold/italic as `**x**`/`_x_`)
+plus `hints` (line index -> `heading` | `center` | `verse`) that `Reflow.analyze(text, { hints })`
+honours. The UI routes files ending `.rtf` or starting `{\rtf` through it.
 
 ## Layout
 - `index.html` – everything. `<script id="reflow-engine">` holds the pure reflow engine
@@ -9,7 +13,9 @@ hard-wrapped story text files. Drag a `.txt` onto the page.
 - `tests/make_samples.py` – generates synthetic hard-wrapped samples into `samples/` and
   `tests/expectations.json`.
 - `tests/test.html` – engine test page (extracts the engine from `index.html`).
-- `tests/ui.html` – UI smoke test / screenshot harness (loads the app in an iframe).
+- `tests/ui.html` – UI smoke test / screenshot harness (loads the app in an iframe and opens the
+  sample through a simulated file drop, so `.rtf` samples work too).
+- `tests/bench.html` – performance benchmark (needs `samples/real/pg1342.txt`).
 - `samples/real/` – optional real Project Gutenberg files for manual checks (not generated).
 
 ## Verification (no Node on this machine; use Python + headless Chrome)

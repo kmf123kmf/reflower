@@ -248,6 +248,57 @@ o = ["Chapter 1"] + P
 samples["unwrapped_noblank.txt"] = o
 expect["unwrapped_noblank.txt"] = {"wrapped": False, "headings": 1, "paras": len(P)}
 
+# 13. Word-style RTF: styles, info, header, centred title, heading styles, real paragraphs,
+#     italics, escaped/unicode characters, a poem with \line, a centred break, page break, field
+def rtf_para(text):
+    return text.replace("forty years", r"{\i forty} years").replace("cafe", r"caf\'e9")
+
+
+word = [
+    r"{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0\froman Times New Roman;}{\f1\fswiss Arial;}}",
+    r"{\colortbl;\red0\green0\blue0;}",
+    r"{\stylesheet{\s0 Normal;}{\s1\b\fs32 heading 1;}{\s15\qc\fs48 Title;}}",
+    r"{\info{\title The Last Voyage of the Albatross}{\author Eleanor Finch}}",
+    r"{\header\pard\qr\f1 Running header that must not appear\par}",
+    r"{\footer\pard\qc Page \chpgn\par}",
+    r"\pard\s15\qc\b\fs48 The Last Voyage\b0\fs24\par",
+    r"\pard\qc{\i by Eleanor Finch}\par",
+    r"\pard\par",
+    r"\pard\s1\b Chapter 1\b0\par",
+    r"\pard\qc\b The Watcher\b0\par",
+    r"\pard\par",
+]
+for p in P[:6]:
+    word.append(r"\pard\fi360 " + rtf_para(p) + r"\par")
+word.append(r"\pard\fi360 She remembered the caf\'e9 by the harbour\u8212?the one with the "
+            r"\ldblquote blue door\rdblquote  {\*\bkmkstart b1}{\*\bkmkend b1}and the "
+            r"{\field{\*\fldinst HYPERLINK \"http://example.com\"}{\fldrslt dreadful coffee}}."
+            r"{\footnote\pard Footnote text that must not appear.\par}\par")
+word.append(r"\pard\li720 O wind that walks upon the water,\line Bring him home, bring him home;\line "
+            r"O tide that turns at every quarter,\line Bring him home across the foam.\par")
+word.append(r"\pard\qc *\tab *\tab *\par")
+for p in P[6:10]:
+    word.append(r"\pard\fi360 " + rtf_para(p) + r"\par")
+word.append(r"\page")
+word.append(r"\pard\outlinelevel0\b Chapter 2\b0\par")
+for p in P[10:]:
+    word.append(r"\pard\fi360 " + rtf_para(p) + r"\par")
+word.append("}")
+samples["story_word.rtf"] = word
+expect["story_word.rtf"] = {"title": True, "headings": 2, "breaks": 1, "verse": 1, "paras": len(P) + 1,
+                            "contains": ["café", "—the one", "<em>forty</em>", "dreadful coffee", "The Watcher"],
+                            "notContains": ["Running header", "Footnote text", "HYPERLINK", "Times New Roman"]}
+
+# 14. Hard-wrapped plain text saved as RTF (WordPad style): every physical line is a \par
+wp = [r"{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Courier New;}}",
+      r"\viewkind4\uc1\pard\f0\fs20 CHAPTER ONE\par", r"\par"]
+for p in P:
+    wp += [line.replace("cafe", r"caf\'e9") + r"\par" for line in wrap(p, 70)] + [r"\par"]
+wp.append("}")
+samples["wordpad_wrapped.rtf"] = wp
+expect["wordpad_wrapped.rtf"] = {"width": 70, "wrapped": True, "headings": 1, "paras": len(P),
+                                 "contains": ["Pennywhistle from the doorway"]}
+
 os.makedirs(OUT, exist_ok=True)
 for name, lines in samples.items():
     with open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\r\n") as f:

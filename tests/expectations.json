@@ -75,5 +75,34 @@
     "wrapped": false,
     "headings": 1,
     "paras": 17
+  },
+  "story_word.rtf": {
+    "title": true,
+    "headings": 2,
+    "breaks": 1,
+    "verse": 1,
+    "paras": 18,
+    "contains": [
+      "caf\u00e9",
+      "\u2014the one",
+      "<em>forty</em>",
+      "dreadful coffee",
+      "The Watcher"
+    ],
+    "notContains": [
+      "Running header",
+      "Footnote text",
+      "HYPERLINK",
+      "Times New Roman"
+    ]
+  },
+  "wordpad_wrapped.rtf": {
+    "width": 70,
+    "wrapped": true,
+    "headings": 1,
+    "paras": 17,
+    "contains": [
+      "Pennywhistle from the doorway"
+    ]
   }
 }

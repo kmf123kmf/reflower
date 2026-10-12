@@ -150,7 +150,7 @@ body.debug #debugBox { display: block; }
   <button id="btnExport" title="Export">Export</button>
   <button id="btnSettings" title="Reading settings">Aa</button>
   <span id="indicator"></span>
-  <input type="file" id="fileInput" accept=".txt,text/plain,*/*" hidden>
+  <input type="file" id="fileInput" accept=".txt,.rtf,text/plain,application/rtf,text/rtf,*/*" hidden>
 </header>
 
 <div class="panel" id="settings">
@@ -184,7 +184,7 @@ body.debug #debugBox { display: block; }
         <div id="dropHint">
           <h1>Reflower</h1>
           <div>Comfortable reading for hard-wrapped text files.</div>
-          <div class="box" id="dropBox">Drop a <b>.txt</b> file here, click to choose one, or paste text with Ctrl+V</div>
+          <div class="box" id="dropBox">Drop a <b>.txt</b> or <b>.rtf</b> file here, click to choose one, or paste text with Ctrl+V</div>
         </div>
       </article>
     </div>
@@ -595,6 +595,20 @@ const Reflow = (() => {
       }
       if (b.note) { items.push({ type: 'note', lines: b.lines }); continue; }
       if (b.lines.every(l => isBreakLine(l.text))) { items.push({ type: 'break', lines: b.lines }); continue; }
+      // structural hints from a rich-text source (e.g. RTF heading styles / centred paragraphs)
+      const hk = opts.hints && b.lines.every(l => opts.hints[l.i]) ? opts.hints[b.lines[0].i] : null;
+      if (hk === 'center' || hk === 'verse') { items.push({ type: hk, lines: b.lines }); continue; }
+      if (hk === 'heading') {
+        const t0 = b.lines[0].text, rest = b.lines.slice(1).map(l => l.text).join(' — ');
+        const hh = matchHeading(t0) || { label: t0, sub: '', level: 2 };
+        const it = { type: 'heading', ...hh, sub: [hh.sub, rest].filter(Boolean).join(' — '), lines: b.lines, subLines: [] };
+        const nb = blocks[k + 1];
+        if (!it.sub && matchHeading(t0) && nb && nb.lines.length <= 2 && nb.lines.every(l => opts.hints[l.i] === 'heading')) {
+          k++; it.sub = nb.lines.map(l => l.text).join(' — '); it.subLines = nb.lines;
+        }
+        items.push(it);
+        continue;
+      }
       const h = headingOf(b, ctx);
       if (h && !(h.numeral && b.lines.length > 1)) {
         const it = { type: 'heading', ...h, lines: [...b.lines], subLines: [] };
@@ -733,9 +747,12 @@ const Reflow = (() => {
     for (const it of items) {
       const L = it.lines;
       switch (it.type) {
-        case 'title': case 'byline': case 'meta':
+        case 'title': case 'byline': case 'meta': case 'center':
           mark(L, it.type);
           nodes.push({ type: it.type, lines: L.map(l => tidy(l.text)), src: src(L) });
+          break;
+        case 'verse':
+          nodes.push(verseNode(L));
           break;
         case 'break':
           mark(L, 'break');
@@ -773,7 +790,7 @@ const Reflow = (() => {
             }
           }
           // find verse runs inside larger prose blocks
-          const short = l => !sec.wrapped || l.len <= 0.85 * Ws;
+          const short = l => sec.wrapped ? l.len <= 0.85 * Ws : l.len <= 80;
           let pr = [];
           const flushProse = () => {
             if (!pr.length) return;
@@ -835,6 +852,149 @@ const Reflow = (() => {
     const titleNode = nodes.find(nd => nd.type === 'title');
     stats.title = metaTitle ? metaTitle.text.replace(/^title:\s*/i, '') : titleNode ? titleNode.lines[0] : null;
     return { nodes, lines: orig, info, stats };
+  }
+
+  /* ---------------- RTF import ---------------- */
+  // Converts RTF to plain text the reflow engine understands, keeping only what matters for a
+  // story: paragraphs, line breaks, page breaks, bold/italic (as **x** / _x_), special
+  // characters, and hints for headings (heading styles, outline levels, short bold or
+  // centred paragraphs). Headers, footers, footnotes, pictures, tables of fonts etc. are dropped.
+  const RTF_SKIP = new Set(['fonttbl', 'colortbl', 'stylesheet', 'info', 'pict', 'header', 'headerl', 'headerr', 'headerf',
+    'footer', 'footerl', 'footerr', 'footerf', 'footnote', 'fldinst', 'object', 'objdata', 'themedata', 'colorschememapping',
+    'datastore', 'latentstyles', 'listtable', 'listoverridetable', 'rsidtbl', 'generator', 'xmlnstbl', 'mmathPr', 'pgdsctbl',
+    'revtbl', 'filetbl', 'listtext', 'pntext', 'pntxta', 'pntxtb', 'bkmkstart', 'bkmkend', 'shppict', 'nonshppict', 'shp',
+    'atnauthor', 'annotation', 'xe', 'tc', 'userprops', 'docvar', 'template', 'wgrffmtfilter', 'pnseclvl']);
+  const RTF_CHARS = { emdash: '—', endash: '–', lquote: '‘', rquote: '’', ldblquote: '“', rdblquote: '”', bullet: '•',
+    emspace: ' ', enspace: ' ', qmspace: ' ', tab: '\t', cell: ' ', zwj: '', zwnj: '' };
+  const CODEPAGES = { 932: 'shift_jis', 936: 'gbk', 949: 'euc-kr', 950: 'big5', 65001: 'utf-8', 10000: 'macintosh' };
+
+  function fromRTF(src) {
+    const paras = [], styles = {};
+    let st = { skip: false, b: false, i: false, uc: 1, dest: null }, stack = [];
+    let para = { qc: false, outline: null, style: null }, runs = [], bytes = [], skipChars = 0, cp = 1252, title = '';
+    let decoder = null;
+    const decode = arr => {
+      if (!decoder) { try { decoder = new TextDecoder(CODEPAGES[cp] || `windows-${cp}`); } catch { decoder = new TextDecoder('windows-1252'); } }
+      return decoder.decode(new Uint8Array(arr));
+    };
+    const emit = t => {
+      if (st.dest === 'stylesheet') { st.sname = (st.sname || '') + t; return; }
+      if (st.dest === 'title') { title += t; return; }
+      if (st.skip || !t) return;
+      const last = runs[runs.length - 1];
+      if (last && last.b === st.b && last.i === st.i) last.t += t;
+      else runs.push({ t, b: st.b, i: st.i });
+    };
+    const flush = () => { if (bytes.length) { const b = bytes; bytes = []; emit(decode(b)); } };
+    const endPara = () => {
+      flush();
+      let text = '';
+      runs.forEach((r, n) => {
+        let t = r.t;
+        const prevCh = text.slice(-1), nextCh = (runs[n + 1] && runs[n + 1].t[0]) || '';
+        const m = t.match(/^(\s*)([\s\S]*?)(\s*)$/);
+        if ((r.b || r.i) && m[2] && !/\n/.test(m[2]) && !(/\p{L}/u.test(prevCh) && !m[1]) && !(/\p{L}/u.test(nextCh) && !m[3])) {
+          const core = r.i ? `_${m[2]}_` : m[2];
+          t = m[1] + (r.b ? `**${core}**` : core) + m[3];
+        }
+        text += t;
+      });
+      const nonSpace = runs.filter(r => r.t.trim());
+      paras.push({ text, qc: para.qc, outline: para.outline, style: para.style, bold: nonSpace.length > 0 && nonSpace.every(r => r.b) });
+      runs = [];
+    };
+
+    for (let p = 0; p < src.length; p++) {
+      const c = src[p];
+      if (c === '{') { flush(); stack.push(st); st = { ...st }; continue; }
+      if (c === '}') {
+        flush();
+        const closing = st;
+        st = stack.pop() || st;
+        if (closing.dest === 'stylesheet' && closing.snum != null && st.dest === 'stylesheet') styles[closing.snum] = (closing.sname || '').replace(/;\s*$/, '').trim();
+        continue;
+      }
+      if (c === '\r' || c === '\n') continue;
+      if (c !== '\\') {
+        if (skipChars) { skipChars--; continue; }
+        flush(); emit(c); continue;
+      }
+      const n = src[p + 1];
+      if (n === "'") {
+        const hex = src.substr(p + 2, 2);
+        p += 3;
+        if (skipChars) { skipChars--; continue; }
+        if (!st.skip || st.dest) bytes.push(parseInt(hex, 16));
+        continue;
+      }
+      if (!/[a-zA-Z]/.test(n || '')) {
+        p++;
+        if (skipChars && n !== '*') { skipChars--; continue; }
+        flush();
+        if (n === '*') st.skip = true;
+        else if (n === '~') emit(' ');
+        else if (n === '_') emit('-');
+        else if (n === '\\' || n === '{' || n === '}') emit(n);
+        else if ((n === '\n' || n === '\r') && !st.skip) endPara();
+        continue;
+      }
+      const m = /^([a-zA-Z]{1,32})(-?\d{1,10})? ?/.exec(src.slice(p + 1, p + 50));
+      p += m[0].length;
+      const word = m[1], hasArg = m[2] !== undefined, arg = hasArg ? parseInt(m[2], 10) : 1;
+      if (word === 'bin') { p += arg; continue; }
+      if (word === 'u') {
+        if (!st.skip || st.dest) { flush(); emit(String.fromCharCode(arg < 0 ? arg + 65536 : arg)); }
+        skipChars = st.uc;
+        continue;
+      }
+      skipChars = 0;
+      flush();
+      if (RTF_CHARS[word] !== undefined) { emit(RTF_CHARS[word]); continue; }
+      switch (word) {
+        case 'par': if (!st.skip) endPara(); break;
+        case 'line': emit('\n'); break;
+        case 'page': case 'sect': if (!st.skip) { if (runs.length) endPara(); paras.push({ brk: true }); } break;
+        case 'row': if (!st.skip) endPara(); break;
+        case 'pard': para = { qc: false, outline: null, style: null }; break;
+        case 'qc': para.qc = true; break;
+        case 'ql': case 'qr': case 'qj': case 'qd': para.qc = false; break;
+        case 'outlinelevel': para.outline = arg; break;
+        case 's': if (st.dest === 'stylesheet') { st.snum = arg; st.sname = ''; } else para.style = arg; break;
+        case 'b': st.b = !hasArg || arg !== 0; break;
+        case 'i': st.i = !hasArg || arg !== 0; break;
+        case 'plain': st.b = st.i = false; break;
+        case 'uc': st.uc = arg; break;
+        case 'ansicpg': cp = arg; decoder = null; break;
+        case 'stylesheet': st.skip = true; st.dest = 'stylesheet'; break;
+        case 'title': if (stack.some(s => s.inInfo) || st.inInfo) { st.skip = true; st.dest = 'title'; } break;
+        case 'info': st.skip = true; st.inInfo = true; break;
+        default: if (RTF_SKIP.has(word)) { st.skip = true; if (st.dest !== 'stylesheet') st.dest = null; }
+      }
+    }
+    if (runs.length) endPara();
+
+    // paragraphs -> lines + hints
+    const lines = [], hints = {};
+    const blankBefore = () => { if (lines.length && lines[lines.length - 1] !== '') lines.push(''); };
+    for (const pg of paras) {
+      if (pg.brk) { blankBefore(); lines.push(''); continue; }
+      const text = pg.text.replace(/[ \t]+$/gm, '');
+      if (!text.trim()) { blankBefore(); continue; }
+      const plain = text.replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '').trim();
+      const sname = styles[pg.style] || '';
+      const short = plain.length <= 80 && !plain.includes('\n');
+      const looksHeading = short && !/[.,;:]$/.test(plain) && (allCaps(plain) || !!matchHeading(plain) || pg.bold);
+      let kind = null;
+      if ((pg.outline != null && pg.outline <= 2) || /^(?:heading\s*[1-3]|title|subtitle|chapter)/i.test(sname)) kind = 'heading';
+      else if (pg.bold && looksHeading && plain.length <= 60) kind = 'heading';
+      else if (pg.qc && short) kind = looksHeading ? 'heading' : 'center';
+      else if (text.includes('\n')) kind = pg.qc ? 'center' : 'verse'; // explicit \line breaks
+      const out = kind === 'heading' ? plain : text;
+      if (kind) blankBefore();
+      for (const l of out.split('\n')) { if (kind) hints[lines.length] = kind; lines.push(l); }
+      if (kind) lines.push('');
+    }
+    return { text: lines.join('\n') + '\n', hints, title: title.trim() || null };
   }
 
   /* ---------------- rendering helpers ---------------- */
@@ -916,7 +1076,7 @@ const Reflow = (() => {
     }).join('\n\n') + '\n';
   }
 
-  return { analyze, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading };
+  return { analyze, fromRTF, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading };
 })();
 </script>
 
@@ -991,11 +1151,15 @@ const Reflow = (() => {
   }
 
   async function openFile(file) {
-    loadText(decode(await file.arrayBuffer()), file.name);
+    const text = decode(await file.arrayBuffer());
+    if (/\.rtf$/i.test(file.name) || /^\s*\{\\rtf/.test(text.slice(0, 32))) {
+      const r = Reflow.fromRTF(text);
+      loadText(r.text, file.name, { hints: r.hints, metaTitle: r.title, source: 'RTF' });
+    } else loadText(text, file.name);
   }
 
-  function loadText(text, name) {
-    doc = { name, text };
+  function loadText(text, name, extra = {}) {
+    doc = { name, text, ...extra };
     analyze();
     render(null);
     stage.focus();
@@ -1003,7 +1167,7 @@ const Reflow = (() => {
 
   function analyze() {
     const t0 = performance.now();
-    doc.res = Reflow.analyze(doc.text, { width: widthOverride });
+    doc.res = Reflow.analyze(doc.text, { width: widthOverride, hints: doc.hints });
     doc.ms = Math.round(performance.now() - t0);
   }
 
@@ -1028,7 +1192,7 @@ const Reflow = (() => {
     }
     applySettings();
     $('#docname').textContent = doc.name;
-    document.title = (doc.res.stats.title || doc.name) + ' — Reflower';
+    document.title = (doc.metaTitle || doc.res.stats.title || doc.name) + ' — Reflower';
     renderToc();
     renderDebug();
     relayout(anchor);
@@ -1052,6 +1216,7 @@ const Reflow = (() => {
     const st = doc.res.stats;
     const yes = v => v ? 'yes' : 'no';
     const rows = [
+      ...(doc.source ? [['source', `${doc.source} (converted to text; Raw shows the conversion)`]] : []),
       ['wrap width', st.width ?? '—'], ['hard-wrapped', `${yes(st.wrapped)} (${st.confidence}%)`],
       ['section widths', st.sectionWidths.join(', ') || '—'], ['double-spaced', yes(st.doubleSpaced)],
       ['flowed', yes(st.flowed)], ['ragged', yes(st.ragged)], ['blank-separated', yes(st.blankSeparated)],

@@ -14,8 +14,13 @@ const f = document.getElementById('f');
 f.addEventListener('load', async () => {
   const w = f.contentWindow, app = w.ReflowerApp, out = [];
   try {
-    const text = await (await fetch('../samples/' + (q.get('sample') || 'gutenberg_72.txt'))).text();
-    app.loadText(text, q.get('sample') || 'gutenberg_72.txt');
+    const name = q.get('sample') || 'gutenberg_72.txt';
+    const blob = await (await fetch('../samples/' + name)).blob();
+    // exercise the real drag & drop path (file decoding, RTF detection)
+    const dt = new w.DataTransfer();
+    dt.items.add(new w.File([blob], name.split('/').pop()));
+    w.dispatchEvent(new w.DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    for (let n = 0; n < 50 && !app.state.doc; n++) await new Promise(r => setTimeout(r, 20));
     if (q.get('debug')) w.document.getElementById('btnDebug').click();
     for (const l of ['page', 'spread', 'scroll']) {
       app.setLayout(l);

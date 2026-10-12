@@ -16,7 +16,9 @@
     const verbose = new URLSearchParams(location.search).get('v');
     const single = new URLSearchParams(location.search).get('file');
     if (single) {
-      const res = Reflow.analyze(await (await fetch('../samples/' + single)).text());
+      let text = await (await fetch('../samples/' + single)).text(), hints;
+      if (single.endsWith('.rtf')) ({ text, hints } = Reflow.fromRTF(text));
+      const res = Reflow.analyze(text, { hints });
       log(`== ${single} ${JSON.stringify(res.stats.counts)}\n${res.stats.passes.join('\n')}\nwidth ${res.stats.width} sections ${res.stats.sectionWidths} blankSep ${res.stats.blankSeparated} ragged ${res.stats.ragged}`);
       if (verbose === 'trace') res.lines.forEach((l, i) => { const x = res.info[i]; log(`${String(i + 1).padStart(5)} ${x.kind.padEnd(8)} ${(x.join || '').padEnd(4)} ${String(x.score ?? '').padStart(5)} | ${l.raw.padEnd(76)} ${x.reasons ? x.reasons.join('; ') : ''}`); });
       else log(Reflow.toText(res.nodes, { smart: false }));
@@ -26,8 +28,9 @@
     const expect = await (await fetch('expectations.json')).json();
     let fails = 0;
     for (const [name, ex] of Object.entries(expect)) {
-      const text = await (await fetch('../samples/' + name)).text();
-      const res = Reflow.analyze(text);
+      let text = await (await fetch('../samples/' + name)).text(), hints;
+      if (name.endsWith('.rtf')) ({ text, hints } = Reflow.fromRTF(text));
+      const res = Reflow.analyze(text, { hints });
       const st = res.stats, c = st.counts;
       const paras = (c.p || 0);
       const checks = [];
@@ -44,6 +47,9 @@
       if ('paras' in ex) chk('paras', paras === ex.paras, paras);
       if ('minParas' in ex) chk('minParas', paras >= ex.minParas, paras);
       if ('approxParas' in ex) chk('approxParas', Math.abs(paras - ex.approxParas) <= 3, paras);
+      const html = Reflow.toHTML(res.nodes, { smart: true }).html;
+      (ex.contains || []).forEach(s => chk(`contains "${s}"`, html.includes(s), html.includes(s)));
+      (ex.notContains || []).forEach(s => chk(`omits "${s}"`, !html.includes(s), !html.includes(s)));
       log(`== ${name}  [${JSON.stringify(c)}] passes: ${st.passes.join(' | ')}`);
       checks.forEach(x => log('   ' + x));
       if (new URLSearchParams(location.search).get('trace') === name)
