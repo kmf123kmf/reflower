@@ -32,6 +32,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 .seg button:last-child { border-radius: 0 5px 5px 0 !important; }
 #docname { font-weight: 600; max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #indicator { color: var(--muted); min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+#indicator, #pgLabel { cursor: pointer; user-select: none; }
+#indicator:hover, #pgLabel:hover { color: var(--fg); }
 
 .panel { position: absolute; top: 40px; z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
 .panel.open { display: block; }
@@ -146,6 +148,7 @@ body.debug #debugBox { display: block; }
 <body class="chapter-breaks">
 
 <header id="toolbar">
+  <button id="btnHome" title="Home: recent files (H)">Home</button>
   <button id="btnToc" title="Contents (T)">&#9776; Contents</button>
   <button id="btnOpen" title="Open a text file (O)">Open</button>
   <span id="docname"></span>
@@ -1114,7 +1117,7 @@ const Reflow = (() => {
     noto: '"Noto Sans", "Open Sans", "Segoe UI", sans-serif',
     mono: 'Consolas, "Cascadia Mono", Menlo, monospace',
   };
-  const DEFAULTS = { theme: 'light', font: 'candara', fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
+  const DEFAULTS = { progress: 'loc', theme: 'light', font: 'candara', fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
   const S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('reflower.settings') || '{}'));
   S.widths = Object.assign({}, DEFAULTS.widths, S.widths);
   const save = () => localStorage.setItem('reflower.settings', JSON.stringify(S));
@@ -1218,17 +1221,17 @@ const Reflow = (() => {
       r.setStart(a.el, 0); r.setEnd(a.caret.node, a.caret.offset);
       off = r.toString().length;
     }
-    const max = stage.scrollHeight - stage.clientHeight;
-    const pct = isPaged() ? (pages > 1 ? page / (pages - 1) : 0) : (max > 0 ? stage.scrollTop / max : 0);
+    const pr = progress(), pct = pr ? pr.pct : 0;
     const all = loadPositions();
-    all[doc.key] = { line: a.line, off, view, pct: Math.round(pct * 1000) / 1000, name: doc.name, t: Date.now() };
+    all[doc.key] = { src: a.src, line: a.line, off, view, pct: Math.round(pct * 1000) / 1000, name: doc.name, t: Date.now() };
     Object.keys(all).sort((x, y) => all[y].t - all[x].t).slice(200).forEach(k => delete all[k]);
     try { localStorage.setItem(POS_KEY, JSON.stringify(all)); } catch { /* quota: skip */ }
   }
   function savedAnchor() {
     const p = loadPositions()[doc.key];
     if (!p) return null;
-    let el = null;
+    if (p.src != null) return anchorAtSrc(p.src);
+    let el = null; // positions saved before `src` existed
     if (view === 'raw') el = content.querySelector(`[data-l="${p.line}"]`);
     else for (const c of content.children) {
       if (c.dataset.s == null) continue;
@@ -1243,7 +1246,7 @@ const Reflow = (() => {
       let n, left = p.off;
       while ((n = it.nextNode())) { if (left < n.length) { caret = { node: n, offset: left }; break; } left -= n.length; }
     }
-    return { caret, line: startLine, el };
+    return { caret, line: startLine, el, src: srcOf(el, caret) };
   }
   window.addEventListener('pagehide', savePosNow);
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosNow(); });
@@ -1294,12 +1297,14 @@ const Reflow = (() => {
     box.innerHTML = '<h4>Continue reading</h4>' + items.map(r => {
       const p = pos[r.key];
       return `<div class="item"><button class="open" data-key="${esc(r.key)}" title="Reopen ${esc(r.name)}"><span class="name">${esc(r.title || r.name)}</span>`
-        + `<span class="when">${p ? Math.round(p.pct * 100) + '% · ' : ''}${ago(p ? Math.max(p.t, r.t) : r.t)}</span></button>`
+        + `<span class="when">${p ? Math.floor(p.pct * 100) + '% · ' : ''}${ago(p ? Math.max(p.t, r.t) : r.t)}</span></button>`
         + `<button class="forget" data-key="${esc(r.key)}" title="Forget this file">✕</button></div>`;
     }).join('') + '<button class="forgetAll">Forget all recent files</button>';
   }
-  $('#recent').addEventListener('click', async e => {
-    const b = e.target.closest('button');
+  content.addEventListener('click', async e => {
+    if (doc) return;
+    if (e.target.closest('#dropBox')) { $('#fileInput').click(); return; }
+    const b = e.target.closest('#recent button');
     if (!b) return;
     e.stopPropagation();
     if (b.classList.contains('open')) {
@@ -1315,6 +1320,12 @@ const Reflow = (() => {
     const t0 = performance.now();
     doc.res = Reflow.analyze(doc.text, { width: widthOverride, hints: doc.hints });
     doc.ms = Math.round(performance.now() - t0);
+    // Progress is measured in source characters, so it is the same in every layout and view.
+    // The readable range leaves out folded boilerplate, so the story's last page reads 100%.
+    const lines = doc.res.lines, off = doc.srcOff = new Float64Array(lines.length + 1);
+    lines.forEach((l, i) => { off[i + 1] = off[i] + l.raw.length + 1; });
+    const body = doc.res.nodes.filter(nd => !nd.boiler);
+    doc.range = body.length ? [off[body[0].src[0]], off[body[body.length - 1].src[1] + 1]] : [0, off[lines.length]];
   }
 
   /* ---------------- rendering ---------------- */
@@ -1341,9 +1352,29 @@ const Reflow = (() => {
     document.title = (doc.metaTitle || doc.res.stats.title || doc.name) + ' — Reflower';
     renderToc();
     renderDebug();
-    held = null;
+    doc.blocks = [...content.children].filter(c => c.dataset.s != null || c.dataset.l != null);
+    if (anchor && anchor.src != null) anchor = anchorAtSrc(anchor.src);
+    held = anchor; // so toggling back and forth (Raw, smart typography) lands on the same spot every time
     relayout(anchor);
     if (!anchor) { stage.scrollTop = 0; setPage(0, false); }
+  }
+
+  const HOME_HTML = content.innerHTML, HOME_TITLE = document.title;
+  function goHome() {
+    if (!doc) return;
+    savePosNow();
+    clearTimeout(progTimer); progTimer = 0;
+    doc = null; held = null; page = 0; pages = 1;
+    content.className = '';
+    content.innerHTML = HOME_HTML;
+    $('#docname').textContent = '';
+    document.title = HOME_TITLE;
+    $('#tocList').innerHTML = '<div class="empty">No document loaded</div>';
+    $('#toc').classList.remove('open');
+    renderDebug(); applySettings(); relayout(null);
+    stage.scrollTop = 0;
+    updateIndicator();
+    showRecent();
   }
 
   function renderToc() {
@@ -1420,18 +1451,75 @@ const Reflow = (() => {
     updateIndicator();
   }
 
+  let progTimer = 0;
   function updateIndicator() {
-    if (doc) queueSavePos();
-    let txt = '';
-    if (doc) {
-      if (isPaged()) txt = `Page ${page + 1} / ${pages}`;
-      else {
-        const max = stage.scrollHeight - stage.clientHeight;
-        txt = max > 0 ? Math.round(100 * stage.scrollTop / max) + '%' : '';
-      }
+    if (!doc) { $('#indicator').textContent = $('#pgLabel').textContent = ''; return; }
+    queueSavePos();
+    // paged: wait out the .22s page-turn transition (measuring mid-turn would cut it short);
+    // scroll: throttle rather than debounce so the number keeps up while scrolling
+    if (isPaged()) { clearTimeout(progTimer); progTimer = setTimeout(showProgress, 240); }
+    else if (!progTimer) progTimer = setTimeout(showProgress, 80);
+  }
+  function showProgress() {
+    progTimer = 0;
+    if (!doc) return;
+    const p = progress();
+    if (!p) { $('#indicator').textContent = $('#pgLabel').textContent = ''; return; }
+    const pct = Math.floor(p.pct * 100) + '%', mode = progressMode();
+    const txt = mode === 'loc' ? `Loc ${p.loc} of ${p.locs} · ${pct}` : mode === 'page' ? `Page ${page + 1} of ${pages} · ${pct}` : pct;
+    $('#indicator').textContent = $('#pgLabel').textContent = txt;
+  }
+  // Like Kindle's reading-progress readout: Location (stable across layouts and fonts), Page (screens
+  // in this layout, so Page/Spread only) or just the percentage. Click the readout to cycle.
+  const progressMode = () => S.progress === 'page' && !isPaged() ? 'loc' : S.progress;
+  function cycleProgress() {
+    if (!doc) return;
+    const modes = isPaged() ? ['loc', 'page', 'pct'] : ['loc', 'pct'];
+    S.progress = modes[(modes.indexOf(progressMode()) + 1) % modes.length];
+    save(); showProgress();
+  }
+  ['#indicator', '#pgLabel'].forEach(sel => {
+    $(sel).addEventListener('click', e => { e.stopPropagation(); cycleProgress(); });
+    $(sel).title = 'Click to switch between Location, Page and percentage';
+  });
+
+  // Kindle-style progress: where the reading point sits in the source text, not how far the
+  // scrollbar or page count has got. Locations are 128-character steps, like Kindle's.
+  function progress() {
+    const a = currentAnchor();
+    if (!a || a.src == null) return null;
+    const [r0, r1] = doc.range, at = a.src;
+    const atEnd = isPaged() ? page >= pages - 1 : stage.scrollTop >= stage.scrollHeight - stage.clientHeight - 1;
+    const pct = atEnd ? 1 : Math.max(0, Math.min(1, (at - r0) / Math.max(1, r1 - r0)));
+    return { pct, loc: Math.floor(pct * (r1 - r0) / 128) + 1, locs: Math.floor((r1 - r0) / 128) + 1 };
+  }
+
+  // Source position of a point in a block: the block's source span, scaled by how far into the
+  // block's text the caret is. Exact in Raw (one row per line); within a few characters when reflowed.
+  const blockSpan = el => [+(el.dataset.s ?? el.dataset.l), +(el.dataset.e ?? el.dataset.l)];
+  const textRoot = el => el.querySelector(':scope > .rt') || el; // Raw rows: skip the line number
+  function srcOf(el, caret) {
+    const [s, e] = blockSpan(el), off = doc.srcOff, root = textRoot(el);
+    let frac = 0;
+    if (caret && root.contains(caret.node)) {
+      const r = document.createRange();
+      r.setStart(root, 0); r.setEnd(caret.node, caret.offset);
+      frac = r.toString().length / Math.max(1, root.textContent.length);
     }
-    $('#indicator').textContent = txt;
-    $('#pgLabel').textContent = txt;
+    return off[s] + frac * (off[e + 1] - off[s]);
+  }
+  function anchorAtSrc(pos) {
+    const B = doc.blocks, off = doc.srcOff;
+    if (!B || !B.length) return null;
+    let lo = 0, hi = B.length - 1; // last block starting at or before pos
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (off[blockSpan(B[mid])[0]] <= pos) lo = mid; else hi = mid - 1; }
+    let el = B[lo], [s, e] = blockSpan(el);
+    if (pos >= off[e + 1] && lo + 1 < B.length) { el = B[lo + 1]; [s, e] = blockSpan(el); pos = off[s]; } // in a gap: next block
+    const frac = Math.max(0, Math.min(1, (pos - off[s]) / Math.max(1, off[e + 1] - off[s])));
+    const root = textRoot(el), it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n, left = Math.round(frac * root.textContent.length), caret = null;
+    while ((n = it.nextNode())) { if (left < n.length) { caret = { node: n, offset: left }; break; } left -= n.length; }
+    return { caret, line: s, el, src: pos };
   }
 
   function caretAt(x, y) {
@@ -1442,27 +1530,31 @@ const Reflow = (() => {
 
   // An anchor remembers the reading position as a DOM caret plus a source-line fallback,
   // so it survives relayouts (same DOM) and re-renders / view switches (new DOM).
+  // The reading point: top-left of the page when paged; in scroll mode a line READ_Y px below the
+  // top edge, which is also where restores and TOC jumps put the anchored line.
+  const READ_Y = 24;
   function captureAnchor() {
-    if (!doc || !content.firstElementChild) return null;
+    if (!doc || !doc.blocks || !doc.blocks.length) return null;
     content.classList.add('noanim'); // finish any running page-turn transition so rects are final
     content.offsetHeight;
     content.classList.remove('noanim');
-    const vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
-    const top = isPaged() ? vr.top : Math.max(vr.top, sr.top);
-    let el = null;
-    for (const c of content.children) {
-      if (!c.dataset.s && !c.dataset.l) continue;
-      const rects = c.getClientRects();
-      const visible = [...rects].some(r => r.bottom > top + 1 && r.right > vr.left + 1 && r.left < vr.right - 1 && r.top < (isPaged() ? vr.bottom : sr.bottom));
-      if (visible) { el = c; break; }
-    }
-    if (!el) return null;
+    const paged = isPaged(), vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    const y = (paged ? vr.top : Math.max(vr.top, sr.top) + READ_Y) + 6;
+    // blocks are in reading order, so binary-search the first one that doesn't end before the point
+    const before = c => {
+      const rs = c.getClientRects(), r = rs[rs.length - 1];
+      return !r || (paged ? r.right <= vr.left + 1 : r.bottom <= y);
+    };
+    const B = doc.blocks;
+    let lo = 0, hi = B.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (before(B[mid])) lo = mid + 1; else hi = mid; }
+    const el = B[Math.min(lo, B.length - 1)];
     let caret = null;
-    const er = [...el.getClientRects()].find(r => r.bottom > top + 1 && r.right > vr.left + 1 && r.left < vr.right - 1);
-    if (er) caret = caretAt(er.left + 8, Math.max(er.top, top) + 6);
+    const er = [...el.getClientRects()].find(r => (paged ? r.right > vr.left + 1 : r.bottom > y));
+    if (er) caret = caretAt(er.left + 8, Math.max(er.top + 6, paged ? vr.top + 6 : y));
     if (caret && !el.contains(caret.node)) caret = null;
     const line = el.dataset.l != null ? +el.dataset.l : +el.dataset.s;
-    return { caret, line, el };
+    return { caret, line, el, src: srcOf(el, caret) };
   }
 
   // Back-to-back layout changes (settings, slider drags, resizes) reuse one held anchor, so the
@@ -1502,13 +1594,13 @@ const Reflow = (() => {
 
   function restoreScrollAnchor(a) {
     const r = anchorRect(a);
-    if (r) stage.scrollTop += r.top - stage.getBoundingClientRect().top - 24;
+    if (r) stage.scrollTop += r.top - stage.getBoundingClientRect().top - READ_Y;
   }
 
   function goToElement(el) {
     if (!el) return;
     if (isPaged()) setPage(Math.floor((el.getClientRects()[0].left + 2 - content.getBoundingClientRect().left) / stride));
-    else stage.scrollTop += el.getBoundingClientRect().top - stage.getBoundingClientRect().top - 24;
+    else stage.scrollTop += el.getBoundingClientRect().top - stage.getBoundingClientRect().top - READ_Y;
   }
 
   let rafId = 0, pendingAnchor = null;
@@ -1553,7 +1645,7 @@ const Reflow = (() => {
   document.querySelectorAll('#viewSeg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
   $('#btnDebug').addEventListener('click', () => { const a = holdAnchor(); debug = !debug; applySettings(); relayout(a); });
   $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
-  $('#dropBox').addEventListener('click', () => $('#fileInput').click());
+  $('#btnHome').addEventListener('click', goHome);
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
   $('#btnToc').addEventListener('click', () => $('#toc').classList.toggle('open'));
   $('#tocList').addEventListener('click', e => {
@@ -1606,6 +1698,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     const k = e.key;
     if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); $('#toc').classList.remove('open'); return; }
     if (k === 'o' || k === 'O') { $('#fileInput').click(); return; }
+    if (k === 'h' || k === 'H') { goHome(); return; }
     if (!doc) return;
     if (k === 't' || k === 'T') { $('#toc').classList.toggle('open'); return; }
     if (k === 'd' || k === 'D') { $('#btnDebug').click(); return; }
@@ -1636,10 +1729,13 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     else if (now - lastFlip > 600) wheelAcc = Math.max(-40, Math.min(40, wheelAcc));
   }, { passive: false });
 
-  viewport.addEventListener('click', e => {
+  // Tap zones: the outer quarters of the text, extended out through the page margins and the
+  // background on either side, so clicking anywhere left or right of the text turns the page.
+  stage.addEventListener('click', e => {
     if (!isPaged() || String(window.getSelection())) return;
-    const r = viewport.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
-    if (x < 0.25) setPage(page - 1); else if (x > 0.75) setPage(page + 1);
+    if (e.target.closest('button, a, summary, input, select, .handle, #pager')) return;
+    const r = viewport.getBoundingClientRect(), zone = r.width * 0.25;
+    if (e.clientX < r.left + zone) setPage(page - 1); else if (e.clientX > r.right - zone) setPage(page + 1);
   });
   $('#pgPrev').addEventListener('click', () => setPage(page - 1));
   $('#pgNext').addEventListener('click', () => setPage(page + 1));
