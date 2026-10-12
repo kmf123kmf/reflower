@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reflower</title>
+<style>
+:root {
+  --pane-w: 760px;
+  --font: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --fs: 19px;
+  --lh: 1.6;
+}
+html[data-theme="light"] { --bg:#e8e5de; --paper:#fffdf8; --fg:#2b2a27; --muted:#8a857b; --accent:#9a5b2e; --border:#d8d2c6; --ui:#f6f3ec; --shadow:0 2px 18px rgba(0,0,0,.09); }
+html[data-theme="sepia"] { --bg:#d9ccb2; --paper:#f4ecd8; --fg:#5b4636; --muted:#9a8670; --accent:#8b4513; --border:#d3c3a5; --ui:#ece2cb; --shadow:0 2px 18px rgba(60,40,10,.12); }
+html[data-theme="dark"]  { --bg:#111214; --paper:#1c1d20; --fg:#d4d1ca; --muted:#85817a; --accent:#d9a066; --border:#34353a; --ui:#232428; --shadow:0 2px 18px rgba(0,0,0,.5); }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+
+/* ---------- toolbar ---------- */
+#toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
+#toolbar .spacer { flex: 1; }
+#toolbar button, .panel button, .panel select { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
+#toolbar button:hover, .panel button:hover { background: var(--paper); }
+#toolbar button.on { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+#toolbar button:disabled { opacity: .4; cursor: default; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0 !important; margin-left: -1px; }
+.seg button:first-child { border-radius: 5px 0 0 5px !important; margin-left: 0; }
+.seg button:last-child { border-radius: 0 5px 5px 0 !important; }
+#docname { font-weight: 600; max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#indicator { color: var(--muted); min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.panel { position: absolute; top: 40px; z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
+.panel.open { display: block; }
+.panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 7px 0; }
+.panel input[type="range"] { width: 130px; }
+.panel h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#settings { right: 10px; }
+#exportMenu { right: 120px; min-width: 180px; }
+#exportMenu button { display: block; width: 100%; margin: 4px 0; text-align: left; }
+
+/* ---------- stage / pane ---------- */
+#stage { flex: 1; min-height: 0; position: relative; overflow-y: auto; outline: none; }
+#pane { position: relative; width: min(var(--pane-w), calc(100% - 24px)); margin: 16px auto; background: var(--paper); box-shadow: var(--shadow); border-radius: 4px; padding: 48px 56px 56px; min-height: calc(100% - 32px); }
+.handle { position: absolute; top: 0; bottom: 0; width: 14px; cursor: ew-resize; z-index: 5; touch-action: none; }
+.handle.l { left: -7px; } .handle.r { right: -7px; }
+.handle::after { content: ""; position: absolute; top: 50%; left: 5px; width: 4px; height: 48px; margin-top: -24px; border-radius: 2px; background: var(--border); opacity: 0; transition: opacity .15s; }
+#pane:hover .handle::after, .handle.active::after { opacity: 1; }
+#viewport { position: relative; }
+#pager { display: none; }
+
+body.paged #stage { overflow: hidden; }
+body.paged #pane { height: calc(100% - 32px); min-height: 0; display: flex; flex-direction: column; padding: 40px 56px 8px; }
+body.paged #viewport { flex: 1; min-height: 0; overflow: hidden; }
+body.paged #content { transition: transform .22s ease; }
+body.paged #content.noanim { transition: none; }
+body.paged #pager { display: flex; flex: none; height: 32px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; user-select: none; }
+#pager button { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 0 10px; line-height: 1; }
+#pager button:hover { color: var(--fg); }
+body.spread #viewport::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid var(--border); opacity: .6; pointer-events: none; }
+
+/* ---------- drop hint ---------- */
+#dropHint { text-align: center; color: var(--muted); padding: 12vh 20px; font-family: var(--font); }
+#dropHint h1 { font-weight: normal; color: var(--fg); margin: 0 0 .4em; }
+#dropHint .box { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; margin-top: 24px; cursor: pointer; }
+#dropHint .box:hover { border-color: var(--accent); color: var(--fg); }
+body.dragging #pane { outline: 3px dashed var(--accent); outline-offset: 6px; }
+
+/* ---------- reading content ---------- */
+#content { font-family: var(--font); font-size: var(--fs); line-height: var(--lh); overflow-wrap: break-word; }
+#content p { margin: 0 0 .85em; orphans: 2; widows: 2; }
+#content.indent p { margin: 0; }
+#content.indent p + p { text-indent: 1.6em; }
+#content.justify p { text-align: justify; hyphens: auto; }
+#content .doc-title { text-align: center; margin: .3em 0 1.6em; break-inside: avoid; }
+#content .doc-title h1 { font-size: 2em; font-weight: normal; line-height: 1.2; margin: 0 0 .25em; letter-spacing: .02em; }
+#content .doc-title .subtitle { margin: 0; font-style: italic; text-indent: 0; }
+#content .byline { text-align: center; font-style: italic; margin: 0 0 1.4em; break-inside: avoid; }
+#content .meta { font-size: .85em; color: var(--muted); border-left: 3px solid var(--border); padding-left: .8em; margin: 0 0 1.2em; break-inside: avoid; }
+#content h2.heading { text-align: center; font-size: 1.4em; font-weight: normal; line-height: 1.25; letter-spacing: .03em; margin: 2.2em 0 1.2em; break-after: avoid; break-inside: avoid; }
+#content h2.heading.lvl1 { font-size: 1.75em; text-transform: none; }
+#content h2.heading .sub { display: block; font-size: .72em; font-style: italic; margin-top: .35em; letter-spacing: 0; }
+#content .scene-break { text-align: center; margin: 1.1em 0; color: var(--muted); letter-spacing: .9em; padding-left: .9em; }
+#content .verse { margin: .8em 0 1.1em 1.6em; break-inside: avoid; }
+#content .verse .vl { text-indent: -1.2em; padding-left: 1.2em; }
+#content .center { text-align: center; margin: .8em 0 1.1em; }
+#content blockquote { margin: .8em 1.6em 1.1em; }
+#content.indent blockquote p + p { text-indent: 1.6em; }
+#content pre { font-family: Consolas, "Cascadia Mono", monospace; font-size: .72em; line-height: 1.35; white-space: pre; overflow-x: auto; margin: .8em 0 1.1em; }
+#content .note { text-align: center; font-size: .8em; font-style: italic; color: var(--muted); margin: .6em 1.5em 1em; break-inside: avoid; }
+#content details.boiler { font-size: .8em; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: .3em .8em; margin: 0 0 1.4em; }
+#content details.boiler summary { cursor: pointer; font-family: "Segoe UI", system-ui, sans-serif; }
+#content details.boiler h2.heading { font-size: 1.1em; margin: 1em 0 .6em; break-before: auto !important; }
+#content :first-child { margin-top: 0; }
+body.paged.chapter-breaks #content h2.heading:not(:first-child) { break-before: column; margin-top: 1.2em; }
+#endSentinel { height: 1px; }
+
+/* raw view */
+#content.raw { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; line-height: 1.45; }
+.rl { display: flex; white-space: pre; min-height: 1.45em; }
+.rl .ln { flex: none; width: 4.5em; text-align: right; padding-right: 1em; color: var(--muted); opacity: .6; user-select: none; }
+.rl .rt { flex: none; }
+.rl .rd { flex: none; margin-left: 1em; color: var(--muted); font-size: 11px; user-select: none; display: none; }
+body.debug .rl .rd { display: inline; }
+body.debug .rl[title] { cursor: help; }
+
+/* ---------- debug overlay ---------- */
+[data-kind] { --dc: #4a90d9; }
+[data-kind="heading"] { --dc: #c0392b; } [data-kind="title"] { --dc: #8e44ad; } [data-kind="break"] { --dc: #16a085; }
+[data-kind="verse"] { --dc: #d35400; } [data-kind="quote"] { --dc: #27ae60; } [data-kind="center"] { --dc: #2c7da0; }
+[data-kind="meta"], [data-kind="byline"] { --dc: #7f8c8d; } [data-kind="pre"] { --dc: #b8860b; } [data-kind="note"] { --dc: #9b59b6; } [data-kind="subtitle"] { --dc: #c0392b; }
+[data-kind="blank"], [data-kind="collapsed"] { --dc: transparent; }
+body.debug #content:not(.raw) [data-kind] { outline: 1px dashed var(--dc); outline-offset: 2px; }
+body.debug #content:not(.raw) [data-kind]::before { content: attr(data-kind) " " attr(data-src); display: inline-block; font: 10px/1.3 Consolas, monospace; color: #fff; background: var(--dc); padding: 0 4px; margin-right: 6px; border-radius: 3px; text-indent: 0; letter-spacing: 0; vertical-align: 2px; font-style: normal; }
+body.debug .rl { border-left: 4px solid var(--dc); }
+body.debug .rl.j-soft .rd { color: #27ae60; } body.debug .rl.j-para .rd { color: #c0392b; } body.debug .rl.j-br .rd { color: #d35400; }
+#debugBox { position: fixed; right: 12px; bottom: 12px; z-index: 25; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 10px 12px; font: 11px/1.5 Consolas, monospace; display: none; max-width: 340px; }
+body.debug #debugBox { display: block; }
+#debugBox table { border-collapse: collapse; } #debugBox td { padding: 0 8px 0 0; vertical-align: top; } #debugBox td:first-child { color: var(--muted); white-space: nowrap; }
+#debugBox input { width: 60px; font: inherit; }
+
+/* ---------- TOC ---------- */
+#toc { position: fixed; top: 41px; left: 0; bottom: 0; width: 300px; z-index: 15; background: var(--ui); border-right: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; padding: 12px 0; }
+#toc.open { transform: none; }
+#toc h4 { margin: 0 16px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#toc a { display: block; padding: 5px 16px; color: var(--fg); text-decoration: none; font-family: var(--font); font-size: 14px; }
+#toc a:hover { background: var(--paper); }
+#toc a.l0 { font-weight: 600; } #toc a.l2 { padding-left: 30px; } #toc a.l3 { padding-left: 44px; }
+#toc a small { color: var(--muted); font-style: italic; }
+#toc .empty { padding: 5px 16px; color: var(--muted); }
+</style>
+</head>
+<body class="chapter-breaks">
+
+<header id="toolbar">
+  <button id="btnToc" title="Contents (T)">&#9776; Contents</button>
+  <button id="btnOpen" title="Open a text file (O)">Open</button>
+  <span id="docname"></span>
+  <span class="spacer"></span>
+  <span class="seg" id="layoutSeg" title="Layout (1 / 2 / 3)">
+    <button data-layout="scroll">Scroll</button><button data-layout="page">Page</button><button data-layout="spread">Spread</button>
+  </span>
+  <span class="seg" id="viewSeg" title="View (R toggles)">
+    <button data-view="reflow">Reflowed</button><button data-view="raw">Raw</button>
+  </span>
+  <button id="btnDebug" title="Debug overlay (D)">Debug</button>
+  <button id="btnExport" title="Export">Export</button>
+  <button id="btnSettings" title="Reading settings">Aa</button>
+  <span id="indicator"></span>
+  <input type="file" id="fileInput" accept=".txt,text/plain,*/*" hidden>
+</header>
+
+<div class="panel" id="settings">
+  <h4>Reading</h4>
+  <label>Theme <select id="setTheme"><option value="light">Light</option><option value="sepia">Sepia</option><option value="dark">Dark</option></select></label>
+  <label>Font <select id="setFont">
+    <option value="serif">Georgia</option><option value="book">Palatino</option><option value="modern">Cambria</option>
+    <option value="sans">Sans-serif</option><option value="mono">Monospace</option></select></label>
+  <label>Size <input type="range" id="setSize" min="13" max="30" step="1"></label>
+  <label>Line height <input type="range" id="setLh" min="1.2" max="2.2" step="0.05"></label>
+  <label>Alignment <select id="setAlign"><option value="left">Left</option><option value="justify">Justified</option></select></label>
+  <label>Paragraphs <select id="setPara"><option value="spaced">Spaced</option><option value="indent">Indented</option></select></label>
+  <label>Smart typography <input type="checkbox" id="setSmart"></label>
+  <label>Chapters start new page <input type="checkbox" id="setChapter"></label>
+</div>
+
+<div class="panel" id="exportMenu">
+  <h4>Export reflowed</h4>
+  <button id="expTxt">Plain text (.txt)</button>
+  <button id="expHtml">Web page (.html)</button>
+</div>
+
+<nav id="toc"><h4>Contents</h4><div id="tocList"><div class="empty">No document loaded</div></div></nav>
+
+<main id="stage" tabindex="-1">
+  <div id="pane">
+    <div class="handle l" data-side="l" title="Drag to resize"></div>
+    <div class="handle r" data-side="r" title="Drag to resize"></div>
+    <div id="viewport">
+      <article id="content">
+        <div id="dropHint">
+          <h1>Reflower</h1>
+          <div>Comfortable reading for hard-wrapped text files.</div>
+          <div class="box" id="dropBox">Drop a <b>.txt</b> file here, click to choose one, or paste text with Ctrl+V</div>
+        </div>
+      </article>
+    </div>
+    <div id="pager"><button id="pgPrev" title="Previous page">&#8249;</button><span id="pgLabel"></span><button id="pgNext" title="Next page">&#8250;</button></div>
+  </div>
+</main>
+
+<div id="debugBox"></div>
+
+<!-- ======================================================================
+     Reflow engine: pure functions, no DOM access.
+     ====================================================================== -->
+<script id="reflow-engine">
+const Reflow = (() => {
+  'use strict';
+
+  /* ---------------- patterns ---------------- */
+  const NUMWORDS = 'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final';
+  const NUM = `(?:\\d{1,4}[a-z]?|[ivxlcdm]{1,8}|${NUMWORDS})`;
+  const CHAPTER_RE = new RegExp(`^(?:chapter|chap\\.|ch\\.|part|book|volume|vol\\.|section|act|scene|canto|episode|letter)(?:\\s+|(?<=\\.)\\s*)${NUM}(?:[\\s-]+${NUM})*(?=$|[\\s.:\\-—–)])[.:)]?\\s*(?:[-—–:|]\\s*)?(.*)$`, 'i');
+  const PART_RE = /^(?:part|book|volume|vol\.|act)\b/i;
+  const NAMED_RE = /^(?:prologue|epilogue|interlude|intermission|afterword|foreword|preface|introduction|dedication|acknowledg(?:e)?ments|contents|table of contents|author'?s note|appendix(?:\s+[a-z0-9]+)?|glossary|postscript|coda|the end|fin|finis)(?=$|[\s.:\-—–])[.:]?\s*(?:[-—–:|]\s*)?(.*)$/i;
+  const NUMERAL_RE = /^[\[(~\-#*=\s.]*(?:\d{1,3}|[IVXLCDM]{1,7})[\])~\-#*=\s.:]*$/;
+  const OOO_RE = /^[\s\-~=*]*(?:o\s*O\s*o|O\s*o\s*O|x\s*X\s*x|X\s*x\s*X)[\s\-~=*]*$/;
+  const LIST_RE = /^(?:[-*+•–]\s+\S|\(?\d{1,3}[.)]\s+\S|\(?[a-z][.)]\s+\S)/;
+  const META_RE = /^[A-Z][A-Za-z0-9 '\/&-]{0,24}:\s+\S/;
+  const NOTE_RE = /^\[(?:Illustration|Footnote|Sidenote|Transcriber|Editor|Note|Image|Picture|Pg\.?\s*\d)/i;
+  const PG_START_RE = /^\*{3}\s*START OF (?:THE|THIS) PROJECT GUTENBERG/i;
+  const PG_END_RE = /^\*{3}\s*END OF (?:THE|THIS) PROJECT GUTENBERG/i;
+  const ABBREV_RE = /(?:^|[\s(“"'])(?:Mr|Mrs|Ms|Mx|Dr|St|Jr|Sr|Prof|Capt|Col|Gen|Lt|Sgt|Rev|Hon|Mt|Messrs|Mme|Mlle|Fr|Gov|Pres|vs|cf|viz|[A-Z])\.$/;
+  const FRONT_RE = /^(?:by|written by|story by|copyright|©|\(c\)|translated|edited|illustrated|a novel|a story|a short story|an? \w+ (?:story|novel|tale))\b/i;
+  const END_W = { terminal: -1.5, colon: -0.5, comma: 1, word: 1.5, hyphen: 2, dash: 0.5, other: 0 };
+  const START_W = { lower: 2, quote: -0.5, upper: 0, digit: 0, other: 0 };
+
+  /* ---------------- small helpers ---------------- */
+  const firstWordLen = t => (t.match(/^\S+/) || [''])[0].length;
+  const bandOf = W => Math.max(8, Math.round(W * 0.22));
+  const isRuleLike = t => t.length >= 3 && /^([-=_~*#+.])\1+$/.test(t.replace(/\s+/g, ''));
+  const isBreakLine = t => t.length > 0 && t.length <= 60 && (!/[\p{L}\p{N}"“”'‘’?!()\[\]]/u.test(t) || OOO_RE.test(t));
+
+  function endType(t) {
+    if (/\p{L}-$/u.test(t)) return 'hyphen';
+    const s = t.replace(/[\s"'”’»)\]_*]+$/, '');
+    if (/(?:--|—|–)$/.test(s)) return 'dash';
+    if (/[.!?…]$/.test(s)) return ABBREV_RE.test(s) ? 'word' : 'terminal';
+    if (/:$/.test(s)) return 'colon';
+    if (/[,;]$/.test(s)) return 'comma';
+    if (/[\p{L}\p{N}]$/u.test(s)) return 'word';
+    return 'other';
+  }
+
+  function startType(t) {
+    const c = t[0];
+    if ('"“‘«„—'.includes(c) || t.startsWith('--')) return 'quote';
+    if (c === "'") return /^'(?:em|tis|twas|cause|til|n|bout|round|kay)\b/i.test(t) ? 'lower' : 'quote';
+    const m = t.match(/[\p{L}\p{N}]/u);
+    if (!m) return 'other';
+    const ch = m[0];
+    if (/\p{N}/u.test(ch)) return 'digit';
+    if (ch !== ch.toUpperCase()) return 'lower';
+    if (ch !== ch.toLowerCase()) return 'upper';
+    return 'other';
+  }
+
+  function allCaps(t) {
+    const letters = t.match(/\p{L}/gu);
+    if (!letters || letters.length < 3) return false;
+    return letters.filter(c => c !== c.toLowerCase()).length / letters.length >= 0.9;
+  }
+
+  function titleCase(t) {
+    const words = t.split(/\s+/).map(w => w.replace(/^[^\p{L}\p{N}]+/u, '')).filter(w => /\p{L}/u.test(w));
+    if (!words.length || words.length > 10) return false;
+    const cap = w => w[0] !== w[0].toLowerCase() || /^\p{N}/u.test(w);
+    if (!cap(words[0])) return false;
+    const sig = words.filter(w => w.length >= 4);
+    return !sig.length || sig.filter(cap).length / sig.length >= 0.75;
+  }
+
+  function isCentered(l, W) {
+    if (!W) return l.indent >= 6 && l.text.length < 60;
+    return l.indent >= 3 && l.len < W - 4 && Math.abs(l.indent - (W - l.len)) <= Math.max(3, Math.round(W * 0.08));
+  }
+
+  function expandTabs(s) {
+    if (!s.includes('\t')) return s;
+    let out = '';
+    for (const ch of s) out += ch === '\t' ? ' '.repeat(8 - (out.length % 8)) : ch;
+    return out;
+  }
+
+  function percentileDesc(arr, p) {
+    const s = [...arr].sort((a, b) => b - a);
+    return s[Math.min(s.length - 1, Math.floor(s.length * p))];
+  }
+
+  function mode(arr, dflt = 0) {
+    const m = new Map();
+    let best = dflt, bc = 0;
+    for (const v of arr) { const c = (m.get(v) || 0) + 1; m.set(v, c); if (c > bc) { bc = c; best = v; } }
+    return best;
+  }
+
+  /* ---------------- pass 0: normalise ---------------- */
+  function normalize(text) {
+    text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/[\f\v]/g, '\n')
+      .replace(/\u00A0/g, ' ').replace(/[\u0000-\u0008\u000E-\u001F\u007F]/g, '');
+    const rows = text.split('\n');
+    if (rows.length && rows[rows.length - 1] === '') rows.pop();
+    return rows.map((raw, i) => {
+      const r = expandTabs(raw).replace(/\s+$/, '');
+      const t = r.trimStart();
+      return { i, raw, text: t, indent: r.length - t.length, len: r.length, blank: !t.length, ts: !!t.length && /[ \t]$/.test(raw) };
+    });
+  }
+
+  /* ---------------- width estimation ---------------- */
+  // Pick L maximising (#lines with length in (L-10, L]) - (#lines longer than L):
+  // hard-wrapped text piles up just under the wrap column and almost never exceeds it.
+  function estimateWidth(lens) {
+    if (lens.length < 3) return null;
+    const max = Math.min(400, Math.max(...lens));
+    if (max < 20) return null;
+    const hist = new Array(max + 2).fill(0);
+    let over400 = 0;
+    for (const l of lens) l > max ? over400++ : hist[l]++;
+    const cum = new Array(max + 2).fill(0);
+    for (let k = 1; k <= max + 1; k++) cum[k] = cum[k - 1] + (hist[k] || 0);
+    const n = lens.length;
+    let best = -Infinity, bestL = null;
+    for (let L = 20; L <= max; L++) {
+      const score = (cum[L] - cum[Math.max(0, L - 10)]) - (n - cum[L]);
+      if (score > best) { best = score; bestL = L; }
+    }
+    return bestL;
+  }
+
+  function nearFrac(lines, W) {
+    if (!lines.length || !W) return 0;
+    const band = bandOf(W);
+    return lines.filter(l => l.len >= W - band && l.len <= W + 2).length / lines.length;
+  }
+
+  /* ---------------- pass 1: double spacing ---------------- */
+  function detectDoubleSpacing(lines) {
+    if (lines.filter(l => !l.blank).length < 8) return false;
+    // Double-spaced files almost never have two adjacent non-blank lines, and the lines
+    // followed by exactly one blank cluster near a wrap width (they are wrapped interior lines).
+    let pairs = 0, single = 0, adjacent = 0;
+    const cand = [];
+    for (let k = 0; k < lines.length; k++) {
+      if (lines[k].blank) continue;
+      let j = k + 1;
+      while (j < lines.length && lines[j].blank) j++;
+      if (j >= lines.length) continue;
+      pairs++;
+      if (j === k + 1) adjacent++;
+      if (j - k === 2) { single++; if (lines[k].len >= 20) cand.push(lines[k]); }
+    }
+    if (!pairs || adjacent / pairs > 0.1 || single / pairs < 0.4) return false;
+    const W = estimateWidth(cand.map(l => l.len));
+    return !!W && W <= 250 && nearFrac(cand, W) >= 0.5;
+  }
+
+  function toBlocks(lines) {
+    const blocks = [];
+    let cur = null, blanks = 0;
+    for (const l of lines) {
+      if (l.blank) { if (cur) { blocks.push(cur); cur = null; } blanks++; continue; }
+      if (!cur) { cur = { lines: [], before: blanks }; blanks = 0; }
+      cur.lines.push(l);
+    }
+    if (cur) blocks.push(cur);
+    blocks.forEach((b, k) => { b.after = blocks[k + 1] ? blocks[k + 1].before : blanks; });
+    return blocks;
+  }
+
+  /* ---------------- block classifiers ---------------- */
+  function mkHeading(t, rest, level) {
+    rest = (rest || '').trim();
+    if (/[,;]$/.test(rest) || rest.length > 60) return null;
+    const label = t.slice(0, t.length - rest.length).replace(/[\s.:\-—–|]+$/, '').trim();
+    return { label, sub: rest, level };
+  }
+
+  function matchHeading(t) {
+    if (t.length > 80) return null;
+    let m;
+    if ((m = t.match(CHAPTER_RE))) return mkHeading(t, m[1], PART_RE.test(t) ? 1 : 2);
+    if ((m = t.match(NAMED_RE))) return mkHeading(t, m[1], 2);
+    if (NUMERAL_RE.test(t)) return { label: t.replace(/^[\[(~\-#*=\s.]+|[\])~\-#*=\s.:]+$/g, ''), sub: '', level: 2, numeral: true };
+    return null;
+  }
+
+  const isMetaBlock = b => {
+    const hits = b.lines.filter(l => META_RE.test(l.text)).length;
+    return hits >= 2 && hits / b.lines.length >= 0.6;
+  };
+
+  function headingOf(b, ctx) {
+    const content = b.lines.filter(l => !isRuleLike(l.text));
+    if (!content.length || content.length > 3) return null;
+    const W = ctx.W, shortMax = W ? Math.min(70, Math.max(30, W * 0.8)) : 70;
+    if (content.some(l => l.text.length > shortMax)) return null;
+    const decorated = content.length < b.lines.length;
+    const t0 = content[0].text, rest = content.slice(1).map(l => l.text);
+    const noEnd = t => !/[.,;:]$/.test(t.replace(/[\s"'”’)*_]+$/, '')) || /^\p{Lu}+\.$/u.test(t);
+    const h = matchHeading(t0);
+    if (h) {
+      if (rest.length && !h.sub) h.sub = rest.join(' — ');
+      else if (rest.length) h.sub += ' — ' + rest.join(' — ');
+      return h;
+    }
+    if (/^["“‘'(]/.test(t0)) return null;
+    const label = t0, sub = rest.join(' — ');
+    if (decorated && content.length === 1) return { label, sub, level: 2 };
+    if (content.every(l => allCaps(l.text)) && content.every(l => noEnd(l.text)) && !/[!?]$/.test(t0)) return { label, sub, level: 2 };
+    if (ctx.wrapped && content.every(l => isCentered(l, W)) && content.every(l => noEnd(l.text))) return { label, sub, level: 2 };
+    return null;
+  }
+
+  function isSubtitleBlock(b, ctx) {
+    if (b.note || b.lines.length > 2) return false;
+    const ts = b.lines.map(l => l.text);
+    if (ts.some(t => t.length > 60 || /[.,;:]$/.test(t) || /^["“‘'(]/.test(t) || isBreakLine(t) || /^(?:[IVXLCDM]+|\d+)[.)]\s/.test(t))) return false;
+    if (matchHeading(ts[0])) return false;
+    return ts.every(t => titleCase(t) || allCaps(t) || /^[_*].*[_*]$/.test(t)) || b.lines.every(l => isCentered(l, ctx.W));
+  }
+
+  function isTitleBlock(b) {
+    const ts = b.lines.map(l => l.text);
+    if (ts.length > 4 || ts.some(t => t.length > 70)) return false;
+    if (isMetaBlock(b) || isBreakLine(ts[0]) || /^["“‘'(]/.test(ts[0])) return false;
+    const last = ts[ts.length - 1].replace(/[\s"'”’)*_]+$/, '');
+    return !/[.,;:]$/.test(last) || allCaps(last);
+  }
+
+  function frontKind(b, ctx) {
+    const ts = b.lines.map(l => l.text);
+    if (ts.length > 4 || ts.some(t => t.length > 70) || matchHeading(ts[0])) return null;
+    if (isMetaBlock(b)) return 'meta';
+    if (FRONT_RE.test(ts[0])) return 'byline';
+    if (ts.every(t => t.length <= 50 && !/[.,;:!?]$/.test(t)) &&
+        b.lines.every(l => allCaps(l.text) || titleCase(l.text) || isCentered(l, ctx.W))) return 'byline';
+    return null;
+  }
+
+  function isPreBlock(b, W) {
+    const L = b.lines;
+    if (L.length < 2) return false;
+    let hits = 0;
+    for (const l of L) {
+      const t = l.text, dense = t.replace(/\s/g, '').length || 1;
+      const sym = (t.match(/[|+_=\/\\<>{}\[\]#*~^`@$%\u2500-\u257F\u2580-\u259F]/g) || []).length;
+      const gaps = (t.match(/\S {3,}(?=\S)/g) || []).length;
+      const atWidth = W && l.len >= W - 1;
+      if (sym / dense > 0.3 || (!atWidth && (gaps >= 2 || /\S {5,}\S/.test(t)))) hits++;
+    }
+    return hits / L.length >= 0.5;
+  }
+
+  /* ---------------- join decision ---------------- */
+  function decide(a, b, prev, sec, ctx) {
+    const reasons = [];
+    let s = 0, room = null, fitSoft = false;
+    const et = endType(a.text), st = startType(b.text);
+    const list = LIST_RE.test(b.text);
+    const indentUp = b.indent > a.indent;
+    const indentDownEnd = !!(prev && prev.dec && prev.dec.join && prev.indent === a.indent && a.indent > b.indent);
+    const W = sec.W;
+    if (!sec.wrapped) { s = -10; reasons.push('section is not hard-wrapped'); }
+    else {
+      if (ctx.flowed) {
+        if (a.ts) { s += 3; reasons.push('trailing space (format=flowed)'); }
+        else { s -= 3; reasons.push('no trailing space (format=flowed)'); }
+      }
+      room = W - (a.len + 1 + firstWordLen(b.text));
+      if (a.len > W + ctx.slop) { s -= 2; reasons.push(`longer than width ${W}`); }
+      else if (ctx.ragged && sec.rmin) {
+        // ragged margins: any length inside the ragged band is uninformative
+        if (a.len >= sec.rmin) { s -= 0.25; reasons.push(`inside ragged margin (${sec.rmin}–${W})`); }
+        else { s -= 1 + (sec.rmin - a.len) / 5; reasons.push(`short of ragged margin ${sec.rmin}`); }
+      }
+      else if (room < 0) { s += 3; fitSoft = true; reasons.push(`next word would not fit (+${-room})`); }
+      else if (room <= ctx.slop) { s += 1; reasons.push(`at width (room ${room})`); }
+      else { s -= 2 + Math.min(room, 30) / 6; reasons.push(`next word fits (room ${room})`); }
+      if (END_W[et]) { s += END_W[et]; reasons.push(`ends ${et}`); }
+      if (START_W[st]) { s += START_W[st]; reasons.push(`next starts ${st}`); }
+      if (et === 'terminal' && st === 'quote') { s -= 1; reasons.push('sentence end + opening quote'); }
+      else if (ctx.blankSeparated) { s += 2; reasons.push('inside blank-separated block'); }
+      if (list) { s -= 3; reasons.push('list item'); }
+      if (indentUp) { s -= 4; reasons.push('indent increases'); }
+      else if (indentDownEnd) { s -= 3; reasons.push('indented block ends'); }
+    }
+    const join = s > 0;
+    let type = 'soft';
+    if (!join) type = (!ctx.blankSeparated || et === 'terminal' || st === 'quote' || indentUp || list || indentDownEnd) ? 'para' : 'br';
+    return { join, type, score: Math.round(s * 10) / 10, reasons, fitSoft: join && fitSoft, room, et, st };
+  }
+
+  function buildDict(text) {
+    const words = new Set(), hyph = new Set();
+    for (const m of text.matchAll(/\p{L}+(?:[-'’]\p{L}+)*/gu)) {
+      const w = m[0].toLowerCase();
+      (w.includes('-') ? hyph : words).add(w);
+    }
+    return { words, hyph };
+  }
+
+  function joinText(acc, a, b, ctx) {
+    if (a.dec.et === 'hyphen') {
+      const left = (acc.match(/(\p{L}+)-$/u) || [])[1], right = (b.text.match(/^\p{L}+/u) || [])[0];
+      if (left && right) {
+        const lw = (left + right).toLowerCase();
+        if (!ctx.dict.hyph.has(`${left}-${right}`.toLowerCase()) && ctx.dict.words.has(lw)) return acc.slice(0, -1) + b.text;
+      }
+      return acc + b.text;
+    }
+    if (/(?:--|—|–)$/.test(acc)) return /\s(?:--|—|–)$/.test(acc) ? `${acc} ${b.text}` : acc + b.text;
+    return `${acc} ${b.text}`;
+  }
+
+  /* ---------------- main analysis ---------------- */
+  function analyze(input, opts = {}) {
+    const orig = normalize(input || '');
+    const info = orig.map(l => ({ kind: l.blank ? 'blank' : 'prose', join: null, score: null, reasons: null, W: null }));
+    const stats = { lines: orig.length, passes: [] };
+    const mark = (lines, kind) => lines.forEach(l => { info[l.i].kind = kind; });
+
+    // Pass 1: double spacing
+    let work = orig;
+    stats.doubleSpaced = detectDoubleSpacing(orig);
+    if (stats.doubleSpaced) {
+      work = [];
+      for (let k = 0; k < orig.length; k++) {
+        if (!orig[k].blank) { work.push(orig[k]); continue; }
+        let j = k;
+        while (j < orig.length && orig[j].blank) j++;
+        if (j - k >= 2) work.push(orig[k]);
+        for (let q = j - k >= 2 ? k + 1 : k; q < j; q++) info[q].kind = 'collapsed';
+        k = j - 1;
+      }
+      stats.passes.push('collapsed double spacing');
+    }
+
+    // Pass 2: blocks (bracketed [Illustration: ...] notes may span blank lines) + global width
+    const blocks = [];
+    for (const b of toBlocks(work)) {
+      const prev = blocks[blocks.length - 1];
+      if (prev && prev.note && !prev.closed && prev.lines.length < 40) {
+        prev.lines.push(...b.lines);
+        prev.closed = /\]\s*$/.test(b.lines[b.lines.length - 1].text);
+        prev.after = b.after;
+        continue;
+      }
+      if (NOTE_RE.test(b.lines[0].text)) { b.note = true; b.closed = /\]\s*$/.test(b.lines[b.lines.length - 1].text); }
+      blocks.push(b);
+    }
+    const interior = [];
+    blocks.forEach(b => b.lines.slice(0, -1).forEach(l => { if (!isBreakLine(l.text)) interior.push(l); }));
+    let W = estimateWidth(interior.filter(l => l.len >= 20).map(l => l.len));
+    const conf = nearFrac(interior, W);
+    let wrapped = !!W && W <= 250 && interior.length >= 3 && conf >= 0.5;
+    if (opts.width) { W = opts.width; wrapped = true; }
+    stats.width = W; stats.confidence = Math.round(conf * 100); stats.wrapped = wrapped;
+    stats.passes.push(`global width ${W ?? '—'} (${stats.confidence}% of interior lines near it)`);
+
+    const nonBlank = work.filter(l => !l.blank).length;
+    // first-line indents inside blocks mean paragraphs are marked by indentation, not blank lines
+    let indentStarts = 0;
+    blocks.forEach(b => b.lines.forEach((l, j) => {
+      const p = b.lines[j - 1], n = b.lines[j + 1];
+      if (p && l.indent > p.indent && l.indent <= 10 && (!n || n.indent < l.indent || endType(l.text) === 'terminal')) indentStarts++;
+    }));
+    const ctx = {
+      W: wrapped ? W : null, wrapped, slop: 2, flowed: false, ragged: false,
+      blankSeparated: blocks.length > 0 && nonBlank / blocks.length <= 12 && !(indentStarts >= 3 && indentStarts >= blocks.length * 0.5),
+      dict: buildDict(input || ''),
+    };
+    if (wrapped) {
+      const band = bandOf(W);
+      const near = interior.filter(l => l.len >= W - band && l.len <= W + 2);
+      const lastTs = blocks.filter(b => b.lines[b.lines.length - 1].ts).length / (blocks.length || 1);
+      ctx.flowed = near.length >= 5 && near.filter(l => l.ts).length / near.length >= 0.7 && lastTs <= 0.3;
+      if (ctx.flowed) stats.passes.push('format=flowed trailing spaces detected');
+    }
+    const contLines = [];
+    blocks.forEach(b => { if (b.lines.length >= 3) b.lines.slice(1).forEach(l => contLines.push(l.indent)); });
+    ctx.bodyIndent = mode(contLines, 0);
+    stats.blankSeparated = ctx.blankSeparated; stats.flowed = ctx.flowed;
+
+    // Pass 3: block classification (front matter, headings, breaks, preformatted, prose)
+    const items = [];
+    let k = 0;
+    // the title is the first block of the file, or the first block after a Gutenberg START marker
+    const pgStartLine = orig.findIndex(l => PG_START_RE.test(l.text));
+    const titleIdx = pgStartLine < 0 ? 0 : blocks.findIndex(b => b.lines[0].i > pgStartLine);
+    for (; k < blocks.length; k++) {
+      const b = blocks[k];
+      if (k === titleIdx && titleIdx >= 0 && k < blocks.length - 1 && !matchHeading(b.lines[0].text)) {
+        const t = isMetaBlock(b) ? 'meta' : isTitleBlock(b) ? 'title' : null;
+        if (t) {
+          items.push({ type: t, lines: b.lines });
+          let fk;
+          while (k + 1 < blocks.length - 1 && k - titleIdx < 5 && (fk = frontKind(blocks[k + 1], ctx))) { k++; items.push({ type: fk, lines: blocks[k].lines }); }
+          continue;
+        }
+      }
+      if (b.note) { items.push({ type: 'note', lines: b.lines }); continue; }
+      if (b.lines.every(l => isBreakLine(l.text))) { items.push({ type: 'break', lines: b.lines }); continue; }
+      const h = headingOf(b, ctx);
+      if (h && !(h.numeral && b.lines.length > 1)) {
+        const it = { type: 'heading', ...h, lines: [...b.lines], subLines: [] };
+        if (!h.sub && !/contents/i.test(h.label) && k + 1 < blocks.length - 1 && isSubtitleBlock(blocks[k + 1], ctx)) {
+          k++;
+          it.sub = blocks[k].lines.map(l => l.text).join(' — ');
+          it.subLines = blocks[k].lines;
+        }
+        items.push(it);
+        continue;
+      }
+      if (isMetaBlock(b)) { items.push({ type: 'meta', lines: b.lines }); continue; }
+      if (isPreBlock(b, ctx.W)) { items.push({ type: 'pre', lines: b.lines }); continue; }
+      // prose block: split out in-block scene breaks / strict chapter headings
+      let run = [];
+      const flush = () => { if (run.length) items.push({ type: 'prose', lines: run, whole: run.length === b.lines.length }); run = []; };
+      b.lines.forEach((l, j) => {
+        const prev = b.lines[j - 1];
+        if (b.lines.length > 1 && isBreakLine(l.text)) { flush(); items.push({ type: 'break', lines: [l] }); return; }
+        if (b.lines.length > 1 && (!ctx.W || l.len < ctx.W * 0.75) && l.text.length <= 60) {
+          const hh = matchHeading(l.text);
+          if (hh && !hh.numeral && (!hh.sub || titleCase(hh.sub) || allCaps(hh.sub)) &&
+              (!prev || endType(prev.text) === 'terminal' || isBreakLine(prev.text))) {
+            flush(); items.push({ type: 'heading', ...hh, lines: [l], subLines: [] }); return;
+          }
+        }
+        run.push(l);
+      });
+      flush();
+    }
+    stats.passes.push('classified blocks');
+
+    // Pass 4: sections (split at headings) with local width estimates
+    const secs = [{ W: ctx.W, wrapped, lines: [] }];
+    for (const it of items) {
+      if (it.type === 'heading' || it.type === 'title') secs.push({ W: ctx.W, wrapped, lines: [] });
+      if (it.type === 'prose') it.lines.forEach(l => { l.sec = secs.length - 1; secs[secs.length - 1].lines.push(l); });
+      it.sec = secs.length - 1;
+    }
+    const proseItems = items.filter(it => it.type === 'prose');
+    if (!opts.width) {
+      for (const sec of secs) {
+        const ints = [];
+        proseItems.forEach(it => { if (secs[it.sec] === sec) it.lines.slice(0, -1).forEach(l => ints.push(l)); });
+        const lens = ints.filter(l => l.len >= 20).map(l => l.len);
+        if (lens.length < 12) continue;
+        const est = estimateWidth(lens), lc = nearFrac(ints, est);
+        if (!est || est > 250 || lc < 0.6) continue;
+        if (wrapped && Math.abs(est - ctx.W) >= 4) sec.W = est;
+        else if (!wrapped && lens.length >= 20) { sec.W = est; sec.wrapped = true; }
+      }
+      const local = secs.filter(s => s.lines.length && s.W !== ctx.W).length;
+      if (local) stats.passes.push(`${local} section(s) use a local width`);
+    }
+
+    // Pass 5..n: decide joins, refine widths from the joined lines, repeat until stable
+    const runDecisions = () => {
+      for (const it of proseItems) {
+        const L = it.lines;
+        for (let j = 0; j < L.length; j++) L[j].dec = j < L.length - 1 ? decide(L[j], L[j + 1], L[j - 1], secs[L[j].sec], ctx) : null;
+      }
+    };
+    let iter = 0;
+    for (; iter < 6; iter++) {
+      runDecisions();
+      if (opts.width) break;
+      let changed = false;
+      if (iter === 0 && !ctx.ragged) {
+        let pairs = 0, mid = 0;
+        for (const it of proseItems) for (const l of it.lines) {
+          if (!l.dec || !secs[l.sec].wrapped) continue;
+          pairs++;
+          if (l.dec.room > ctx.slop && (l.dec.et === 'word' || l.dec.et === 'comma') && l.dec.st === 'lower') mid++;
+        }
+        if (pairs >= 10 && mid / pairs >= 0.1) {
+          ctx.ragged = true; changed = true;
+          // ragged margins: the right margin is the longest typical line, the band starts
+          // around the 15th percentile of lines that clearly continue mid-sentence
+          for (const sec of secs) {
+            if (!sec.wrapped) continue;
+            const lens = sec.lines.filter(l => l.dec).map(l => l.len);
+            const cont = sec.lines.filter(l => l.dec && l.dec.st === 'lower' && l.dec.et !== 'terminal').map(l => l.len);
+            if (lens.length < 5) continue;
+            sec.W = percentileDesc(lens, 0.01);
+            sec.rmin = cont.length >= 5 ? percentileDesc(cont, 0.95) : Math.round(sec.W * 0.7);
+          }
+          stats.passes.push('ragged (manually wrapped) margins detected');
+        }
+      }
+      if (ctx.ragged) { if (iter === 0) continue; break; }
+      for (const sec of secs) {
+        if (!sec.wrapped) continue;
+        const soft = sec.lines.filter(l => l.dec && l.dec.fitSoft).map(l => l.len);
+        if (soft.length < 10) continue;
+        const nw = Math.max(sec.W - 12, Math.min(sec.W + ctx.slop, percentileDesc(soft, 0.01)));
+        if (nw !== sec.W) { sec.W = nw; changed = true; }
+      }
+      if (!changed) break;
+    }
+    stats.iterations = iter + 1;
+    stats.passes.push(`join decisions converged after ${stats.iterations} pass(es)`);
+    stats.ragged = ctx.ragged;
+    stats.sectionWidths = [...new Set(secs.filter(s => s.lines.length && s.wrapped).map(s => s.W))];
+
+    // Pass n+1: structural post-classification of prose + node building
+    const nodes = [];
+    const src = lines => [lines[0].i, lines[lines.length - 1].i];
+    const tidy = t => t.replace(/\s{2,}/g, ' ').trim();
+    const termFrac = L => L.filter(l => endType(l.text) === 'terminal').length / L.length;
+    const recordDecs = (L, kind) => L.forEach((l, j) => {
+      const d = j < L.length - 1 ? l.dec : null;
+      Object.assign(info[l.i], { kind, W: secs[l.sec] ? secs[l.sec].W : null });
+      if (d) Object.assign(info[l.i], { join: d.join ? 'soft' : d.type, score: d.score, reasons: d.reasons });
+    });
+    const buildParas = L => {
+      const paras = [];
+      let cur = null;
+      L.forEach((l, j) => {
+        const d = j > 0 ? L[j - 1].dec : null;
+        if (!cur) cur = { parts: [l.text], src: [l.i, l.i] };
+        else if (d.join) cur.parts[cur.parts.length - 1] = joinText(cur.parts[cur.parts.length - 1], L[j - 1], l, ctx);
+        else if (d.type === 'br') cur.parts.push(l.text);
+        else { paras.push(cur); cur = { parts: [l.text], src: [l.i, l.i] }; }
+        cur.src[1] = l.i;
+      });
+      if (cur) paras.push(cur);
+      paras.forEach(p => { p.parts = p.parts.map(tidy); });
+      return paras;
+    };
+    const verseNode = L => {
+      const min = Math.min(...L.map(l => l.indent));
+      recordDecs(L, 'verse');
+      return { type: 'verse', lines: L.map(l => ({ text: l.text, indent: l.indent - min })), src: src(L) };
+    };
+
+    for (const it of items) {
+      const L = it.lines;
+      switch (it.type) {
+        case 'title': case 'byline': case 'meta':
+          mark(L, it.type);
+          nodes.push({ type: it.type, lines: L.map(l => tidy(l.text)), src: src(L) });
+          break;
+        case 'break':
+          mark(L, 'break');
+          nodes.push({ type: 'break', src: src(L) });
+          break;
+        case 'note':
+          mark(L, 'note');
+          nodes.push({ type: 'note', text: tidy(L.map(l => l.text).join(' ')), src: src(L) });
+          break;
+        case 'pre':
+          mark(L, 'pre');
+          { const min = Math.min(...L.map(l => l.indent)); nodes.push({ type: 'pre', text: L.map(l => ' '.repeat(l.indent - min) + l.text).join('\n'), src: src(L) }); }
+          break;
+        case 'heading':
+          mark(L, 'heading'); mark(it.subLines, 'subtitle');
+          nodes.push({ type: 'heading', level: it.level, label: tidy(it.label), sub: tidy(it.sub || ''), src: src([...L, ...it.subLines]) });
+          break;
+        case 'prose': {
+          const sec = secs[it.sec], Ws = sec.W, n = L.length;
+          if (it.whole && sec.wrapped && n <= 6 && L.every(l => isCentered(l, Ws))) {
+            recordDecs(L, 'center');
+            nodes.push({ type: 'center', lines: L.map(l => tidy(l.text)), src: src(L) });
+            break;
+          }
+          if (it.whole && n >= 2) {
+            const hard = L.slice(0, -1).filter(l => !l.dec.join).length;
+            if (hard / (n - 1) >= 0.6 && termFrac(L) < 0.6 && (!sec.wrapped || Math.max(...L.map(l => l.len)) <= 0.85 * Ws)) {
+              nodes.push(verseNode(L));
+              break;
+            }
+            if (sec.wrapped && L.every(l => l.indent >= ctx.bodyIndent + 2) && L.some(l => l.dec && l.dec.join) && !L.every(l => isCentered(l, Ws))) {
+              recordDecs(L, 'quote');
+              nodes.push({ type: 'quote', paras: buildParas(L), src: src(L) });
+              break;
+            }
+          }
+          // find verse runs inside larger prose blocks
+          const short = l => !sec.wrapped || l.len <= 0.85 * Ws;
+          let pr = [];
+          const flushProse = () => {
+            if (!pr.length) return;
+            recordDecs(pr, 'prose');
+            buildParas(pr).forEach(p => nodes.push({ type: 'p', parts: p.parts, src: p.src }));
+            pr = [];
+          };
+          let j = 0;
+          while (j < n) {
+            let e = j;
+            if (j === 0 || !L[j - 1].dec.join) while (e < n && short(L[e]) && (e === n - 1 || !L[e].dec.join)) e++;
+            const run = L.slice(j, e);
+            if (run.length >= 3 && termFrac(run) < 0.5) { flushProse(); nodes.push(verseNode(run)); j = e; }
+            else if (run.length >= 3) { pr.push(...run); j = e; }
+            else { pr.push(L[j]); j++; }
+          }
+          flushProse();
+          break;
+        }
+      }
+    }
+
+    // Final pass: rejoin paragraphs interrupted by illustrations, page furniture or stray
+    // blank lines (a paragraph that starts lowercase after one that did not end a sentence).
+    let rejoined = 0;
+    for (let q = 0; q < nodes.length; q++) {
+      const cur = nodes[q];
+      if (cur.type !== 'p' || startType(cur.parts[0]) !== 'lower') continue;
+      let p = q - 1;
+      while (p >= 0 && q - p <= 4 && ['note', 'pre', 'center'].includes(nodes[p].type)) p--;
+      const prev = nodes[p];
+      if (!prev || prev.type !== 'p' || endType(prev.parts[prev.parts.length - 1]) === 'terminal') continue;
+      const last = prev.parts.length - 1;
+      prev.parts[last] = /\p{L}-$|(?:--|—)$/u.test(prev.parts[last]) ? prev.parts[last] + cur.parts[0] : `${prev.parts[last]} ${cur.parts[0]}`;
+      prev.parts.push(...cur.parts.slice(1));
+      prev.src[1] = Math.max(prev.src[1], cur.src[1]);
+      nodes.splice(q, 1);
+      q--;
+      rejoined++;
+    }
+    if (rejoined) stats.passes.push(`rejoined ${rejoined} interrupted paragraph(s)`);
+
+    // Project Gutenberg header / licence boilerplate is folded away when rendering
+    const pgStart = orig.findIndex(l => PG_START_RE.test(l.text));
+    const pgEnd = orig.findIndex(l => PG_END_RE.test(l.text));
+    if (pgStart >= 0 || pgEnd >= 0) {
+      nodes.forEach(nd => {
+        if (pgStart >= 0 && nd.src[1] <= pgStart) nd.boiler = 'Project Gutenberg header';
+        else if (pgEnd >= 0 && nd.src[0] >= pgEnd) nd.boiler = 'Project Gutenberg licence';
+      });
+      stats.passes.push('folded Project Gutenberg boilerplate');
+    }
+
+    stats.counts = nodes.reduce((m, nd) => { m[nd.type] = (m[nd.type] || 0) + 1; return m; }, {});
+    let soft = 0, hard = 0;
+    info.forEach(x => { if (x.join === 'soft') soft++; else if (x.join) hard++; });
+    stats.joined = soft; stats.kept = hard;
+    const metaTitle = orig.find(l => /^title:\s+\S/i.test(l.text));
+    const titleNode = nodes.find(nd => nd.type === 'title');
+    stats.title = metaTitle ? metaTitle.text.replace(/^title:\s*/i, '') : titleNode ? titleNode.lines[0] : null;
+    return { nodes, lines: orig, info, stats };
+  }
+
+  /* ---------------- rendering helpers ---------------- */
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function smarten(s) {
+    return s
+      .replace(/\.\s?\.\s?\.(?!\.)/g, '…')
+      .replace(/(?<!-)---?(?!-)/g, '—')
+      .replace(/(^|[\s(\[{—–\-‘])"(?=\S)/gu, '$1“').replace(/"/g, '”')
+      .replace(/(^|[\s(\[{—–\-“])'(?=(?:em|tis|twas|cause|til|n|bout|round|kay)\b|\d0s)/giu, '$1’')
+      .replace(/([\p{L}\p{N}])'(?=[\p{L}\p{N}])/gu, '$1’')
+      .replace(/(^|[\s(\[{—–\-“])'(?=\S)/gu, '$1‘').replace(/'/g, '’');
+  }
+
+  function emphasize(s) {
+    return s
+      .replace(/(^|[^\p{L}\p{N}*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\p{L}\p{N}*])/gu, '$1<strong>$2</strong>')
+      .replace(/(^|[^\p{L}\p{N}*])\*(?=\S)([^*]+?)(?<=\S)\*(?![\p{L}\p{N}*])/gu, '$1<em>$2</em>')
+      .replace(/(^|[^\p{L}\p{N}_])_(?=\S)([^_]+?)(?<=\S)_(?![\p{L}\p{N}_])/gu, '$1<em>$2</em>');
+  }
+
+  function toHTML(nodes, opts = {}) {
+    const fmt = s => { s = esc(s); return opts.smart ? emphasize(smarten(s)) : s; };
+    const toc = [];
+    let open = null;
+    const html = nodes.map((nd, i) => {
+      let wrap = '';
+      if ((nd.boiler || null) !== open) {
+        wrap = (open ? '</details>' : '') + (nd.boiler ? `<details class="boiler"><summary>${esc(nd.boiler)}</summary>` : '');
+        open = nd.boiler || null;
+      }
+      return wrap + nodeHTML(nd, i, nd.boiler ? [] : toc, fmt);
+    }).join('\n') + (open ? '</details>' : '');
+    return { html, toc };
+  }
+
+  function nodeHTML(nd, i, toc, fmt) {
+      const a = `data-i="${i}" data-s="${nd.src[0]}" data-e="${nd.src[1]}" data-kind="${nd.type === 'p' ? 'prose' : nd.type}" data-src="L${nd.src[0] + 1}${nd.src[1] > nd.src[0] ? '–' + (nd.src[1] + 1) : ''}"`;
+      switch (nd.type) {
+        case 'title':
+          toc.push({ id: `n${i}`, level: 0, text: nd.lines[0] });
+          return `<header id="n${i}" class="doc-title" ${a}><h1>${fmt(nd.lines[0])}</h1>${nd.lines.slice(1).map(l => `<p class="subtitle">${fmt(l)}</p>`).join('')}</header>`;
+        case 'byline': case 'meta': case 'center':
+          return `<div class="${nd.type}" ${a}>${nd.lines.map(fmt).join('<br>')}</div>`;
+        case 'heading':
+          toc.push({ id: `n${i}`, level: nd.level, text: nd.label, sub: nd.sub });
+          return `<h2 id="n${i}" class="heading lvl${nd.level}" ${a}>${fmt(nd.label)}${nd.sub ? `<span class="sub">${fmt(nd.sub)}</span>` : ''}</h2>`;
+        case 'break':
+          return `<div class="scene-break" ${a}>* * *</div>`;
+        case 'p':
+          return `<p ${a}>${nd.parts.map(fmt).join('<br>')}</p>`;
+        case 'quote':
+          return `<blockquote ${a}>${nd.paras.map(p => `<p>${p.parts.map(fmt).join('<br>')}</p>`).join('')}</blockquote>`;
+        case 'verse':
+          return `<div class="verse" ${a}>${nd.lines.map(l => `<div class="vl"${l.indent ? ` style="margin-left:${(l.indent / 2).toFixed(1)}em"` : ''}>${fmt(l.text) || '&nbsp;'}</div>`).join('')}</div>`;
+        case 'pre':
+          return `<pre ${a}>${esc(nd.text)}</pre>`;
+        case 'note':
+          return `<div class="note" ${a}>${fmt(nd.text)}</div>`;
+      }
+      return '';
+  }
+
+  function toText(nodes, opts = {}) {
+    const f = s => opts.smart ? smarten(s) : s;
+    return nodes.map(nd => {
+      switch (nd.type) {
+        case 'title': case 'byline': case 'meta': case 'center': return nd.lines.map(f).join('\n');
+        case 'heading': return f(nd.label) + (nd.sub ? '\n' + f(nd.sub) : '');
+        case 'break': return '* * *';
+        case 'p': return nd.parts.map(f).join('\n');
+        case 'quote': return nd.paras.map(p => p.parts.map(x => '    ' + f(x)).join('\n')).join('\n\n');
+        case 'verse': return nd.lines.map(l => ' '.repeat(l.indent) + f(l.text)).join('\n');
+        case 'pre': return nd.text;
+        case 'note': return f(nd.text);
+      }
+      return '';
+    }).join('\n\n') + '\n';
+  }
+
+  return { analyze, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading };
+})();
+</script>
+
+<!-- ======================================================================
+     Application / UI
+     ====================================================================== -->
+<script>
+(() => {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const stage = $('#stage'), pane = $('#pane'), viewport = $('#viewport'), content = $('#content');
+  const FONTS = {
+    serif: 'Georgia, "Iowan Old Style", "Times New Roman", serif',
+    book: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
+    modern: 'Cambria, Charter, "Bitstream Charter", Georgia, serif',
+    sans: '"Segoe UI", system-ui, -apple-system, Roboto, sans-serif',
+    mono: 'Consolas, "Cascadia Mono", Menlo, monospace',
+  };
+  const DEFAULTS = { theme: 'light', font: 'serif', fs: 19, lh: 1.6, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
+  const S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('reflower.settings') || '{}'));
+  S.widths = Object.assign({}, DEFAULTS.widths, S.widths);
+  const save = () => localStorage.setItem('reflower.settings', JSON.stringify(S));
+
+  let doc = null;           // { name, text, res, html, toc }
+  let view = 'reflow';
+  let debug = false;
+  let widthOverride = null;
+  let page = 0, pages = 1, stride = 1;
+
+  const isPaged = () => !!doc && view === 'reflow' && S.layout !== 'scroll';
+
+  /* ---------------- settings ---------------- */
+  function applySettings() {
+    const root = document.documentElement;
+    root.dataset.theme = S.theme;
+    root.style.setProperty('--font', FONTS[S.font] || FONTS.serif);
+    root.style.setProperty('--fs', S.fs + 'px');
+    root.style.setProperty('--lh', S.lh);
+    content.classList.toggle('justify', S.align === 'justify');
+    content.classList.toggle('indent', S.para === 'indent');
+    document.body.classList.toggle('chapter-breaks', !!S.chapterBreaks);
+    $('#setTheme').value = S.theme; $('#setFont').value = S.font; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
+    $('#setAlign').value = S.align; $('#setPara').value = S.para; $('#setSmart').checked = S.smart; $('#setChapter').checked = S.chapterBreaks;
+    document.querySelectorAll('#layoutSeg button').forEach(b => b.classList.toggle('on', b.dataset.layout === S.layout));
+    document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    $('#btnDebug').classList.toggle('on', debug);
+    document.body.classList.toggle('debug', debug);
+  }
+
+  const bindSetting = (id, key, parse, rerender) => $(id).addEventListener('input', e => {
+    const a = captureAnchor();
+    S[key] = parse(e.target);
+    save(); applySettings();
+    if (rerender) render(a); else relayout(a);
+  });
+  bindSetting('#setTheme', 'theme', t => t.value);
+  bindSetting('#setFont', 'font', t => t.value);
+  bindSetting('#setSize', 'fs', t => +t.value);
+  bindSetting('#setLh', 'lh', t => +t.value);
+  bindSetting('#setAlign', 'align', t => t.value);
+  bindSetting('#setPara', 'para', t => t.value);
+  bindSetting('#setSmart', 'smart', t => t.checked, true);
+  bindSetting('#setChapter', 'chapterBreaks', t => t.checked);
+
+  /* ---------------- loading ---------------- */
+  function decode(buf) {
+    const b = new Uint8Array(buf);
+    if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(buf);
+    if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(buf);
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch { return new TextDecoder('windows-1252').decode(buf); }
+  }
+
+  async function openFile(file) {
+    loadText(decode(await file.arrayBuffer()), file.name);
+  }
+
+  function loadText(text, name) {
+    doc = { name, text };
+    analyze();
+    render(null);
+    stage.focus();
+  }
+
+  function analyze() {
+    const t0 = performance.now();
+    doc.res = Reflow.analyze(doc.text, { width: widthOverride });
+    doc.ms = Math.round(performance.now() - t0);
+  }
+
+  /* ---------------- rendering ---------------- */
+  function render(anchor) {
+    if (!doc) return;
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (view === 'raw') {
+      const { lines, info } = doc.res;
+      content.className = 'raw';
+      content.innerHTML = lines.map((l, i) => {
+        const x = info[i];
+        const glyph = x.join === 'soft' ? `↩ ${x.score}` : x.join === 'para' ? `¶ ${x.score}` : x.join === 'br' ? `↵ ${x.score}` : '';
+        const tip = x.reasons ? ` title="${esc(x.kind + ' | ' + x.join + ' (' + x.score + ') W=' + x.W + '\n' + x.reasons.join('\n'))}"` : ` title="${x.kind}"`;
+        return `<div class="rl j-${x.join || 'none'}" data-l="${i}" data-kind="${x.kind}"${tip}><span class="ln">${i + 1}</span><span class="rt">${esc(l.raw) || ' '}</span><span class="rd">${glyph}</span></div>`;
+      }).join('') + '<div id="endSentinel"></div>';
+    } else {
+      const { html, toc } = Reflow.toHTML(doc.res.nodes, { smart: S.smart });
+      content.className = '';
+      content.innerHTML = html + '<div id="endSentinel"></div>';
+      doc.toc = toc;
+    }
+    applySettings();
+    $('#docname').textContent = doc.name;
+    document.title = (doc.res.stats.title || doc.name) + ' — Reflower';
+    renderToc();
+    renderDebug();
+    relayout(anchor);
+    if (!anchor) { stage.scrollTop = 0; setPage(0, false); }
+  }
+
+  function renderToc() {
+    const list = $('#tocList');
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    if (!doc || !doc.toc || !doc.toc.length) { list.innerHTML = '<div class="empty">No headings detected</div>'; return; }
+    const minL = Math.min(...doc.toc.filter(t => t.level > 0).map(t => t.level), 2);
+    list.innerHTML = doc.toc.map(t => {
+      const lvl = t.level === 0 ? 0 : t.level - minL + 1;
+      return `<a href="#${t.id}" class="l${lvl}" data-id="${t.id}">${esc(t.text)}${t.sub ? ` <small>${esc(t.sub)}</small>` : ''}</a>`;
+    }).join('');
+  }
+
+  function renderDebug() {
+    const box = $('#debugBox');
+    if (!doc) { box.innerHTML = ''; return; }
+    const st = doc.res.stats;
+    const yes = v => v ? 'yes' : 'no';
+    const rows = [
+      ['wrap width', st.width ?? '—'], ['hard-wrapped', `${yes(st.wrapped)} (${st.confidence}%)`],
+      ['section widths', st.sectionWidths.join(', ') || '—'], ['double-spaced', yes(st.doubleSpaced)],
+      ['flowed', yes(st.flowed)], ['ragged', yes(st.ragged)], ['blank-separated', yes(st.blankSeparated)],
+      ['lines', `${st.lines} (${st.joined} joined, ${st.kept} kept)`],
+      ['nodes', Object.entries(st.counts).map(([k, v]) => `${k}:${v}`).join(' ')],
+      ['passes', st.passes.join('<br>')], ['time', doc.ms + ' ms'],
+    ];
+    box.innerHTML = `<table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>
+      <div style="margin-top:6px">Force width: <input id="dbgWidth" type="number" min="20" max="400" placeholder="auto" value="${widthOverride || ''}">
+      <span style="color:var(--muted)"> (blank = auto)</span></div>`;
+    $('#dbgWidth').addEventListener('change', e => {
+      const v = parseInt(e.target.value, 10);
+      widthOverride = v >= 20 ? v : null;
+      const a = captureAnchor();
+      analyze(); render(a);
+    });
+  }
+
+  /* ---------------- layout / paging ---------------- */
+  const GAP = 64;
+
+  function relayout(anchor) {
+    const paged = isPaged();
+    document.body.classList.toggle('paged', paged);
+    document.body.classList.toggle('spread', paged && S.layout === 'spread');
+    const w = Math.min(S.widths[S.layout] || 760, window.innerWidth - 24);
+    document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
+    content.classList.add('noanim');
+    content.style.width = content.style.height = content.style.columnCount = content.style.columnGap = content.style.columnFill = content.style.transform = '';
+    if (paged) {
+      const vw = Math.floor(viewport.clientWidth), vh = Math.floor(viewport.clientHeight);
+      Object.assign(content.style, { width: vw + 'px', height: vh + 'px', columnCount: S.layout === 'spread' ? 2 : 1, columnGap: GAP + 'px', columnFill: 'auto' });
+      stride = vw + GAP;
+      const sent = $('#endSentinel');
+      pages = sent ? Math.max(1, Math.floor((sent.getBoundingClientRect().left - content.getBoundingClientRect().left) / stride) + 1) : 1;
+      if (anchor) page = pageOfAnchor(anchor);
+      setPage(page, false);
+    } else if (anchor) {
+      restoreScrollAnchor(anchor);
+    }
+    content.offsetHeight; // flush before re-enabling transitions
+    content.classList.remove('noanim');
+    updateIndicator();
+  }
+
+  function setPage(p, animate = true) {
+    if (!isPaged()) return;
+    page = Math.max(0, Math.min(pages - 1, p));
+    if (!animate) content.classList.add('noanim');
+    content.style.transform = `translateX(${-page * stride}px)`;
+    if (!animate) { content.offsetHeight; content.classList.remove('noanim'); }
+    updateIndicator();
+  }
+
+  function updateIndicator() {
+    let txt = '';
+    if (doc) {
+      if (isPaged()) txt = `Page ${page + 1} / ${pages}`;
+      else {
+        const max = stage.scrollHeight - stage.clientHeight;
+        txt = max > 0 ? Math.round(100 * stage.scrollTop / max) + '%' : '';
+      }
+    }
+    $('#indicator').textContent = txt;
+    $('#pgLabel').textContent = txt;
+  }
+
+  function caretAt(x, y) {
+    if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); return r && { node: r.startContainer, offset: r.startOffset }; }
+    if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); return p && { node: p.offsetNode, offset: p.offset }; }
+    return null;
+  }
+
+  // An anchor remembers the reading position as a DOM caret plus a source-line fallback,
+  // so it survives relayouts (same DOM) and re-renders / view switches (new DOM).
+  function captureAnchor() {
+    if (!doc || !content.firstElementChild) return null;
+    content.classList.add('noanim'); // finish any running page-turn transition so rects are final
+    content.offsetHeight;
+    content.classList.remove('noanim');
+    const vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    const top = isPaged() ? vr.top : Math.max(vr.top, sr.top);
+    let el = null;
+    for (const c of content.children) {
+      if (!c.dataset.s && !c.dataset.l) continue;
+      const rects = c.getClientRects();
+      const visible = [...rects].some(r => r.bottom > top + 1 && r.right > vr.left + 1 && r.left < vr.right - 1 && r.top < (isPaged() ? vr.bottom : sr.bottom));
+      if (visible) { el = c; break; }
+    }
+    if (!el) return null;
+    let caret = null;
+    const er = [...el.getClientRects()].find(r => r.bottom > top + 1 && r.right > vr.left + 1 && r.left < vr.right - 1);
+    if (er) caret = caretAt(er.left + 8, Math.max(er.top, top) + 6);
+    if (caret && !el.contains(caret.node)) caret = null;
+    const line = el.dataset.l != null ? +el.dataset.l : +el.dataset.s;
+    return { caret, line, el };
+  }
+
+  function anchorRect(a) {
+    if (a.caret && a.caret.node.isConnected) {
+      try {
+        const r = document.createRange(), n = a.caret.node;
+        const max = n.nodeType === 3 ? n.length : n.childNodes.length, off = Math.min(a.caret.offset, max);
+        r.setStart(n, off);
+        // span one character: a collapsed caret at a line wrap can report the previous line's end
+        if (n.nodeType === 3 && off < max) r.setEnd(n, off + 1);
+        const rects = r.getClientRects(), rect = rects[rects.length - 1];
+        if (rect) return rect;
+      } catch { /* fall through */ }
+    }
+    if (a.el && a.el.isConnected) return a.el.getClientRects()[0];
+    let target = null;
+    if (view === 'raw') target = content.querySelector(`[data-l="${a.line}"]`);
+    else for (const c of content.children) { if (c.dataset.s != null && +c.dataset.s <= a.line && +c.dataset.e >= a.line) { target = c; break; } if (c.dataset.s != null && +c.dataset.s > a.line) { target = c; break; } }
+    return target ? target.getClientRects()[0] : null;
+  }
+
+  function pageOfAnchor(a) {
+    const r = anchorRect(a);
+    if (!r) return page;
+    return Math.max(0, Math.min(pages - 1, Math.floor((r.left + 2 - content.getBoundingClientRect().left) / stride)));
+  }
+
+  function restoreScrollAnchor(a) {
+    const r = anchorRect(a);
+    if (r) stage.scrollTop += r.top - stage.getBoundingClientRect().top - 24;
+  }
+
+  function goToElement(el) {
+    if (!el) return;
+    if (isPaged()) setPage(Math.floor((el.getClientRects()[0].left + 2 - content.getBoundingClientRect().left) / stride));
+    else stage.scrollTop += el.getBoundingClientRect().top - stage.getBoundingClientRect().top - 24;
+  }
+
+  let rafId = 0, pendingAnchor = null;
+  function scheduleRelayout(anchor) {
+    if (!pendingAnchor) pendingAnchor = anchor || captureAnchor();
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => { const a = pendingAnchor; pendingAnchor = null; relayout(a); });
+  }
+  window.addEventListener('resize', () => scheduleRelayout());
+  stage.addEventListener('scroll', () => { if (!isPaged()) updateIndicator(); });
+
+  /* ---------------- pane resizing ---------------- */
+  document.querySelectorAll('.handle').forEach(h => {
+    h.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const side = h.dataset.side, startX = e.clientX, startW = pane.getBoundingClientRect().width, anchor = captureAnchor();
+      h.setPointerCapture(e.pointerId);
+      h.classList.add('active');
+      const move = ev => {
+        const w = startW + (ev.clientX - startX) * 2 * (side === 'r' ? 1 : -1);
+        S.widths[S.layout] = Math.round(Math.max(320, Math.min(window.innerWidth - 24, w)));
+        scheduleRelayout(anchor);
+      };
+      const up = () => { h.classList.remove('active'); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); save(); };
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+    });
+  });
+
+  /* ---------------- toolbar ---------------- */
+  function setLayout(l) {
+    const a = captureAnchor();
+    S.layout = l; save(); applySettings(); relayout(a);
+  }
+  function setView(v) {
+    if (v === view) return;
+    const a = captureAnchor();
+    view = v;
+    if (a) { a.caret = null; a.el = null; }
+    render(a);
+  }
+  document.querySelectorAll('#layoutSeg button').forEach(b => b.addEventListener('click', () => setLayout(b.dataset.layout)));
+  document.querySelectorAll('#viewSeg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+  $('#btnDebug').addEventListener('click', () => { const a = captureAnchor(); debug = !debug; applySettings(); relayout(a); });
+  $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
+  $('#dropBox').addEventListener('click', () => $('#fileInput').click());
+  $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
+  $('#btnToc').addEventListener('click', () => $('#toc').classList.toggle('open'));
+  $('#tocList').addEventListener('click', e => {
+    const a = e.target.closest('a');
+    if (!a) return;
+    e.preventDefault();
+    if (view !== 'reflow') setView('reflow');
+    goToElement(document.getElementById(a.dataset.id));
+    $('#toc').classList.remove('open');
+  });
+
+  const panels = { btnSettings: '#settings', btnExport: '#exportMenu' };
+  Object.entries(panels).forEach(([btn, sel]) => $('#' + btn).addEventListener('click', e => {
+    e.stopPropagation();
+    Object.values(panels).forEach(s => { if (s !== sel) $(s).classList.remove('open'); });
+    $(sel).classList.toggle('open');
+  }));
+  document.addEventListener('click', e => {
+    Object.values(panels).forEach(s => { if (!e.target.closest(s)) $(s).classList.remove('open'); });
+    if (!e.target.closest('#toc') && !e.target.closest('#btnToc')) $('#toc').classList.remove('open');
+  });
+
+  /* ---------------- export ---------------- */
+  const baseName = () => (doc ? doc.name.replace(/\.[^.]+$/, '') : 'document');
+  function download(name, type, data) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  const EXPORT_CSS = `body{background:#f4f1ea;margin:0;color:#2b2a27}article{max-width:38em;margin:2em auto;padding:3em 3.5em;background:#fffdf8;font:19px/1.6 Georgia,serif;box-shadow:0 2px 18px rgba(0,0,0,.08)}
+p{margin:0 0 .85em}.doc-title{text-align:center;margin-bottom:1.6em}.doc-title h1{font-weight:normal;font-size:2em;margin:0 0 .25em}.subtitle{font-style:italic;margin:0}
+.byline{text-align:center;font-style:italic;margin-bottom:1.4em}.meta{font-size:.85em;color:#8a857b;border-left:3px solid #ddd;padding-left:.8em;margin-bottom:1.2em}
+h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 .sub{display:block;font-size:.72em;font-style:italic;margin-top:.35em}
+.scene-break{text-align:center;letter-spacing:.9em;color:#999;margin:1.1em 0}.verse{margin:.8em 0 1.1em 1.6em}.vl{text-indent:-1.2em;padding-left:1.2em}
+.center{text-align:center;margin:.8em 0 1.1em}blockquote{margin:.8em 1.6em 1.1em}pre{font-size:.72em;overflow-x:auto}`;
+  $('#expTxt').addEventListener('click', () => { if (doc) download(baseName() + '.reflowed.txt', 'text/plain;charset=utf-8', Reflow.toText(doc.res.nodes, { smart: S.smart })); });
+  $('#expHtml').addEventListener('click', () => {
+    if (!doc) return;
+    const { html } = Reflow.toHTML(doc.res.nodes, { smart: S.smart });
+    const title = (doc.res.stats.title || baseName()).replace(/</g, '&lt;');
+    download(baseName() + '.html', 'text/html;charset=utf-8',
+      `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${EXPORT_CSS}</style></head>\n<body><article>\n${html}\n</article></body></html>\n`);
+  });
+
+  /* ---------------- input: keys, wheel, clicks ---------------- */
+  document.addEventListener('keydown', e => {
+    if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key;
+    if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); $('#toc').classList.remove('open'); return; }
+    if (k === 'o' || k === 'O') { $('#fileInput').click(); return; }
+    if (!doc) return;
+    if (k === 't' || k === 'T') { $('#toc').classList.toggle('open'); return; }
+    if (k === 'd' || k === 'D') { $('#btnDebug').click(); return; }
+    if (k === 'r' || k === 'R') { setView(view === 'raw' ? 'reflow' : 'raw'); return; }
+    if (k === '1' || k === '2' || k === '3') { setLayout(['scroll', 'page', 'spread'][+k - 1]); return; }
+    if (isPaged()) {
+      const next = ['ArrowRight', 'ArrowDown', 'PageDown'].includes(k) || (k === ' ' && !e.shiftKey);
+      const prev = ['ArrowLeft', 'ArrowUp', 'PageUp'].includes(k) || (k === ' ' && e.shiftKey);
+      if (next) setPage(page + 1); else if (prev) setPage(page - 1);
+      else if (k === 'Home') setPage(0); else if (k === 'End') setPage(pages - 1); else return;
+      e.preventDefault();
+    } else {
+      const h = stage.clientHeight * 0.9;
+      const d = { ArrowDown: 48, ArrowUp: -48, PageDown: h, PageUp: -h, ' ': e.shiftKey ? -h : h }[k];
+      if (d != null) stage.scrollBy({ top: d, behavior: k.startsWith('Arrow') ? 'auto' : 'smooth' });
+      else if (k === 'Home') stage.scrollTop = 0; else if (k === 'End') stage.scrollTop = stage.scrollHeight; else return;
+      e.preventDefault();
+    }
+  });
+
+  let wheelAcc = 0, lastFlip = 0;
+  stage.addEventListener('wheel', e => {
+    if (!isPaged()) return;
+    e.preventDefault();
+    wheelAcc += Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    const now = Date.now();
+    if (Math.abs(wheelAcc) >= 40 && now - lastFlip > 250) { setPage(page + Math.sign(wheelAcc)); lastFlip = now; wheelAcc = 0; }
+    else if (now - lastFlip > 600) wheelAcc = Math.max(-40, Math.min(40, wheelAcc));
+  }, { passive: false });
+
+  viewport.addEventListener('click', e => {
+    if (!isPaged() || String(window.getSelection())) return;
+    const r = viewport.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
+    if (x < 0.25) setPage(page - 1); else if (x > 0.75) setPage(page + 1);
+  });
+  $('#pgPrev').addEventListener('click', () => setPage(page - 1));
+  $('#pgNext').addEventListener('click', () => setPage(page + 1));
+
+  /* ---------------- drag & drop / paste ---------------- */
+  let dragDepth = 0;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  window.addEventListener('dragenter', e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dragging'); } });
+  window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    dragDepth = 0; document.body.classList.remove('dragging');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) openFile(f);
+  });
+  document.addEventListener('paste', e => {
+    if (e.target.closest('input, textarea')) return;
+    const t = e.clipboardData.getData('text/plain');
+    if (t && t.trim()) { e.preventDefault(); loadText(t, 'Pasted text'); }
+  });
+
+  applySettings();
+  relayout(null);
+  window.ReflowerApp = { loadText, setLayout, setView, setPage, get state() { return { page, pages, view, layout: S.layout, doc }; } };
+})();
+</script>
+</body>
+</html>

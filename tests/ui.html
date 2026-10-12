@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Reflower UI smoke test</title>
+<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%;display:block}#out{position:fixed;left:0;bottom:0;background:#ffe;font:11px monospace;max-width:50%;white-space:pre-wrap;z-index:9;display:none}</style>
+</head>
+<body>
+<pre id="out"></pre>
+<iframe id="f" src="../index.html"></iframe>
+<script>
+// Usage: /tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=2&view=reflow&debug=1&show=1
+// Headless: chrome --headless --screenshot=x.png --window-size=1400,900 <url>   or  --dump-dom to read #out
+const q = new URLSearchParams(location.search);
+const f = document.getElementById('f');
+f.addEventListener('load', async () => {
+  const w = f.contentWindow, app = w.ReflowerApp, out = [];
+  try {
+    const text = await (await fetch('../samples/' + (q.get('sample') || 'gutenberg_72.txt'))).text();
+    app.loadText(text, q.get('sample') || 'gutenberg_72.txt');
+    if (q.get('debug')) w.document.getElementById('btnDebug').click();
+    for (const l of ['page', 'spread', 'scroll']) {
+      app.setLayout(l);
+      const st = app.state;
+      out.push(`${l}: pages=${st.pages}`);
+    }
+    app.setLayout('page'); app.setPage(4);
+    const before = w.document.caretRangeFromPoint ? 'caret ok' : 'no caret api';
+    app.setLayout('spread');
+    out.push(`page4 in page-layout -> spread page ${app.state.page} (${before})`);
+    app.setLayout('page');
+    out.push(`back to page layout -> page ${app.state.page}`);
+    app.setView('raw'); out.push(`raw rows=${w.document.querySelectorAll('.rl').length}`);
+    app.setView('reflow');
+    app.setLayout(q.get('layout') || 'scroll');
+    if (q.get('view')) app.setView(q.get('view'));
+    if (q.get('page')) app.setPage(+q.get('page'), false);
+    out.push(`final: ${JSON.stringify({ page: app.state.page, pages: app.state.pages, view: app.state.view, layout: app.state.layout })}`);
+  } catch (e) { out.push('ERROR ' + e.stack); }
+  const o = document.getElementById('out');
+  o.textContent = out.join('\n');
+  if (q.get('show')) o.style.display = 'block';
+});
+</script>
+</body>
+</html>

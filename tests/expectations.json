@@ -1,0 +1,79 @@
+{
+  "gutenberg_72.txt": {
+    "width": 72,
+    "wrapped": true,
+    "headings": 2,
+    "breaks": 1,
+    "title": true,
+    "verse": 2,
+    "minParas": 15
+  },
+  "indent_style_65.txt": {
+    "width": 65,
+    "wrapped": true,
+    "headings": 2,
+    "breaks": 1,
+    "paras": 17
+  },
+  "double_spaced_80.txt": {
+    "width": 80,
+    "wrapped": true,
+    "doubleSpaced": true,
+    "headings": 1,
+    "paras": 10
+  },
+  "unwrapped.txt": {
+    "wrapped": false,
+    "headings": 1,
+    "paras": 17
+  },
+  "fanfic_76.txt": {
+    "width": 76,
+    "wrapped": true,
+    "headings": 2,
+    "breaks": 1,
+    "meta": true
+  },
+  "justified_68.txt": {
+    "width": 68,
+    "wrapped": true,
+    "headings": 1,
+    "breaks": 1,
+    "paras": 17
+  },
+  "mixed_width.txt": {
+    "wrapped": true,
+    "headings": 2,
+    "paras": 17
+  },
+  "flowed_72.txt": {
+    "width": 72,
+    "wrapped": true,
+    "flowed": true,
+    "headings": 1,
+    "paras": 17
+  },
+  "noblank_70.txt": {
+    "width": 70,
+    "wrapped": true,
+    "headings": 1,
+    "approxParas": 17
+  },
+  "ragged.txt": {
+    "wrapped": true,
+    "headings": 1,
+    "paras": 17
+  },
+  "frontmatter_72.txt": {
+    "width": 72,
+    "wrapped": true,
+    "title": true,
+    "headings": 3,
+    "minParas": 15
+  },
+  "unwrapped_noblank.txt": {
+    "wrapped": false,
+    "headings": 1,
+    "paras": 17
+  }
+}

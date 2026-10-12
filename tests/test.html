@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Reflower engine tests</title></head>
+<body>
+<pre id="out">running...</pre>
+<script>
+// Serve the repo root over HTTP (python -m http.server) and open /tests/test.html,
+// or run headless:  chrome --headless --dump-dom http://localhost:8765/tests/test.html
+(async () => {
+  const out = [];
+  const log = s => out.push(s);
+  try {
+    const page = await (await fetch('../index.html')).text();
+    const dom = new DOMParser().parseFromString(page, 'text/html');
+    const Reflow = new Function(dom.getElementById('reflow-engine').textContent + '\nreturn Reflow;')();
+    const verbose = new URLSearchParams(location.search).get('v');
+    const single = new URLSearchParams(location.search).get('file');
+    if (single) {
+      const res = Reflow.analyze(await (await fetch('../samples/' + single)).text());
+      log(`== ${single} ${JSON.stringify(res.stats.counts)}\n${res.stats.passes.join('\n')}\nwidth ${res.stats.width} sections ${res.stats.sectionWidths} blankSep ${res.stats.blankSeparated} ragged ${res.stats.ragged}`);
+      if (verbose === 'trace') res.lines.forEach((l, i) => { const x = res.info[i]; log(`${String(i + 1).padStart(5)} ${x.kind.padEnd(8)} ${(x.join || '').padEnd(4)} ${String(x.score ?? '').padStart(5)} | ${l.raw.padEnd(76)} ${x.reasons ? x.reasons.join('; ') : ''}`); });
+      else log(Reflow.toText(res.nodes, { smart: false }));
+      document.getElementById('out').textContent = out.join('\n');
+      return;
+    }
+    const expect = await (await fetch('expectations.json')).json();
+    let fails = 0;
+    for (const [name, ex] of Object.entries(expect)) {
+      const text = await (await fetch('../samples/' + name)).text();
+      const res = Reflow.analyze(text);
+      const st = res.stats, c = st.counts;
+      const paras = (c.p || 0);
+      const checks = [];
+      const chk = (label, ok, got) => { checks.push(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${got}`); if (!ok) fails++; };
+      if ('width' in ex) chk('width', st.sectionWidths.includes(ex.width) || st.width === ex.width, `${st.width} / sections ${st.sectionWidths}`);
+      if ('wrapped' in ex) chk('wrapped', st.wrapped === ex.wrapped, st.wrapped + ` (${st.confidence}%)`);
+      if ('doubleSpaced' in ex) chk('doubleSpaced', st.doubleSpaced === ex.doubleSpaced, st.doubleSpaced);
+      if ('flowed' in ex) chk('flowed', st.flowed === ex.flowed, st.flowed);
+      if ('headings' in ex) chk('headings', (c.heading || 0) === ex.headings, c.heading || 0);
+      if ('breaks' in ex) chk('breaks', (c.break || 0) === ex.breaks, c.break || 0);
+      if ('title' in ex) chk('title', !!c.title === ex.title, !!c.title);
+      if ('meta' in ex) chk('meta', !!c.meta === ex.meta, !!c.meta);
+      if ('verse' in ex) chk('verse', (c.verse || 0) === ex.verse, c.verse || 0);
+      if ('paras' in ex) chk('paras', paras === ex.paras, paras);
+      if ('minParas' in ex) chk('minParas', paras >= ex.minParas, paras);
+      if ('approxParas' in ex) chk('approxParas', Math.abs(paras - ex.approxParas) <= 3, paras);
+      log(`== ${name}  [${JSON.stringify(c)}] passes: ${st.passes.join(' | ')}`);
+      checks.forEach(x => log('   ' + x));
+      if (new URLSearchParams(location.search).get('trace') === name)
+        res.lines.forEach((l, i) => { const x = res.info[i]; log(`   ${String(i + 1).padStart(4)} ${x.kind.padEnd(8)} ${(x.join || '').padEnd(4)} ${String(x.score ?? '').padStart(5)} W${x.W ?? '-'} | ${l.raw.padEnd(80)} ${x.reasons ? x.reasons.join('; ') : ''}`); });
+      if (verbose === '1' || verbose === name) log(Reflow.toText(res.nodes, { smart: false }).split('\n').map(l => '      | ' + l).join('\n'));
+    }
+    log(`\n${fails ? fails + ' FAILURE(S)' : 'ALL PASSED'}`);
+  } catch (e) { log('ERROR ' + e.stack); }
+  document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body>
+</html>
