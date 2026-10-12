@@ -57,8 +57,6 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 body.paged #stage { overflow: hidden; }
 body.paged #pane { height: calc(100% - 32px); min-height: 0; display: flex; flex-direction: column; padding: 40px 56px 8px; }
 body.paged #viewport { flex: 1; min-height: 0; overflow: hidden; }
-body.paged #content { transition: transform .22s ease; }
-body.paged #content.noanim { transition: none; }
 body.paged #pager { display: flex; flex: none; height: 32px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; user-select: none; }
 #pager button { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 0 10px; line-height: 1; }
 #pager button:hover { color: var(--fg); }
@@ -74,7 +72,9 @@ body.spread #viewport::after { content: ""; position: absolute; top: 0; bottom: 
 #recent .item { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
 #recent .item:hover { border-color: var(--accent); }
 #recent .open { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: baseline; background: none; border: 0; padding: 9px 12px; font: inherit; color: var(--fg); text-align: left; cursor: pointer; }
-#recent .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recent .label { flex: 1; min-width: 0; }
+#recent .name { overflow-wrap: anywhere; }
+#recent .title { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 #recent .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
 #recent .forget, #recent .forgetAll { background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; padding: 9px 12px; }
 #recent .forget:hover, #recent .forgetAll:hover { color: var(--fg); }
@@ -1294,9 +1294,14 @@ const Reflow = (() => {
     const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const pos = loadPositions();
     const ago = t => { const m = (Date.now() - t) / 6e4; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+    // The file name is what the reader knows the file by, so it always leads, in full; a detected
+    // title (which can be a guess, or stale RTF metadata) is only shown under it, and only if different.
+    const plain = t => String(t || '').replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '').replace(/\s+/g, ' ').trim();
+    const key = t => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const same = (name, t) => key(name.replace(/\.[a-z0-9]{1,4}$/i, '')) === key(t);
     box.innerHTML = '<h4>Continue reading</h4>' + items.map(r => {
-      const p = pos[r.key];
-      return `<div class="item"><button class="open" data-key="${esc(r.key)}" title="Reopen ${esc(r.name)}"><span class="name">${esc(r.title || r.name)}</span>`
+      const p = pos[r.key], title = plain(r.title), sub = title && !same(r.name, title) ? `<span class="title">${esc(title)}</span>` : '';
+      return `<div class="item"><button class="open" data-key="${esc(r.key)}" title="Reopen ${esc(r.name)}"><span class="label"><span class="name">${esc(r.name)}</span>${sub}</span>`
         + `<span class="when">${p ? Math.floor(p.pct * 100) + '% · ' : ''}${ago(p ? Math.max(p.t, r.t) : r.t)}</span></button>`
         + `<button class="forget" data-key="${esc(r.key)}" title="Forget this file">✕</button></div>`;
     }).join('') + '<button class="forgetAll">Forget all recent files</button>';
@@ -1417,12 +1422,12 @@ const Reflow = (() => {
   const GAP = 64;
 
   function relayout(anchor) {
+    stopTurn();
     const paged = isPaged();
     document.body.classList.toggle('paged', paged);
     document.body.classList.toggle('spread', paged && S.layout === 'spread');
     const w = Math.min(S.widths[S.layout] || 760, window.innerWidth - 24);
     document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
-    content.classList.add('noanim');
     content.style.width = content.style.height = content.style.columnCount = content.style.columnGap = content.style.columnFill = content.style.transform = '';
     if (paged) {
       const vw = Math.floor(viewport.clientWidth), vh = Math.floor(viewport.clientHeight);
@@ -1436,18 +1441,29 @@ const Reflow = (() => {
       restoreScrollAnchor(anchor);
     }
     ownScrollTop = stage.scrollTop;
-    content.offsetHeight; // flush before re-enabling transitions
-    content.classList.remove('noanim');
     updateIndicator();
   }
 
+  // Page turns fade with a short drift in the direction of travel, rather than sliding the whole
+  // column strip past (which, in Spread, also runs under the fixed spine and reads as a ribbon).
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const stopTurn = () => content.getAnimations().forEach(a => a.cancel());
   function setPage(p, animate = true) {
     if (!isPaged()) return;
     if (!restoring) held = null;
+    const from = page;
     page = Math.max(0, Math.min(pages - 1, p));
-    if (!animate) content.classList.add('noanim');
+    stopTurn();
     content.style.transform = `translateX(${-page * stride}px)`;
-    if (!animate) { content.offsetHeight; content.classList.remove('noanim'); }
+    if (animate && page !== from && !reduceMotion.matches) {
+      const dir = Math.sign(page - from), x = n => `translateX(${-n * stride}px)`;
+      content.animate([
+        { offset: 0, transform: x(from), opacity: 1, easing: 'ease-in' },
+        { offset: 0.4, transform: `${x(from)} translateX(${-dir * 18}px)`, opacity: 0 },
+        { offset: 0.4, transform: `${x(page)} translateX(${dir * 18}px)`, opacity: 0, easing: 'ease-out' },
+        { offset: 1, transform: x(page), opacity: 1 },
+      ], { duration: 240 });
+    }
     updateIndicator();
   }
 
@@ -1455,9 +1471,9 @@ const Reflow = (() => {
   function updateIndicator() {
     if (!doc) { $('#indicator').textContent = $('#pgLabel').textContent = ''; return; }
     queueSavePos();
-    // paged: wait out the .22s page-turn transition (measuring mid-turn would cut it short);
+    // paged: wait out the ~.24s page turn (measuring mid-turn would cut it short);
     // scroll: throttle rather than debounce so the number keeps up while scrolling
-    if (isPaged()) { clearTimeout(progTimer); progTimer = setTimeout(showProgress, 240); }
+    if (isPaged()) { clearTimeout(progTimer); progTimer = setTimeout(showProgress, 280); }
     else if (!progTimer) progTimer = setTimeout(showProgress, 80);
   }
   function showProgress() {
@@ -1535,9 +1551,7 @@ const Reflow = (() => {
   const READ_Y = 24;
   function captureAnchor() {
     if (!doc || !doc.blocks || !doc.blocks.length) return null;
-    content.classList.add('noanim'); // finish any running page-turn transition so rects are final
-    content.offsetHeight;
-    content.classList.remove('noanim');
+    stopTurn(); // finish any running page turn so rects are final
     const paged = isPaged(), vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
     const y = (paged ? vr.top : Math.max(vr.top, sr.top) + READ_Y) + 6;
     // blocks are in reading order, so binary-search the first one that doesn't end before the point
