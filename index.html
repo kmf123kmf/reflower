@@ -34,7 +34,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* Tooltips: data-tip on any element; shown below it after a short hover (or on keyboard focus). */
 [data-tip] { position: relative; }
 [data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 40; padding: 3px 8px; border-radius: 4px; background: var(--fg); color: var(--paper); font: 12px/1.4 "Segoe UI", system-ui, sans-serif; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .1s; }
-[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .3s; }
+[data-tip]:focus-visible::after { opacity: 1; transition-delay: .3s; }
+@media (hover: hover) { [data-tip]:hover::after { opacity: 1; transition-delay: .3s; } } /* touch: a tap would leave it stuck on */
 .seg { display: inline-flex; }
 .seg button { border-radius: 0 !important; margin-left: -1px; }
 .seg button:first-child { border-radius: 5px 0 0 5px !important; margin-left: 0; }
@@ -44,7 +45,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #indicator, #pgLabel { cursor: pointer; user-select: none; }
 #indicator:hover, #pgLabel:hover { color: var(--fg); }
 
-.panel { position: absolute; top: 40px; z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
+.panel { position: absolute; top: var(--tb-h, 40px); z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
 .panel.open { display: block; }
 .panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 7px 0; }
 .panel input[type="range"] { width: 130px; }
@@ -212,6 +213,42 @@ body.has-doc #stage, body.has-doc #scrubbar { margin-left: 28px; margin-right: 2
 ::highlight(search-cur) { background-color: #ff9632; color: #000; }
 html[data-theme="dark"] ::highlight(search) { background-color: rgba(217, 160, 102, .3); }
 html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; color: #111; }
+
+/* ---------- compact (phones) ---------- */
+/* Below 700px the page takes the full width, Contents/Search move into the toolbar, and desktop-only
+   controls (Spread, Raw, Debug, file name, indicator, resize handles) are hidden. The JS side uses the
+   same breakpoint (compactMQ) to treat a saved Spread as Page. */
+.compact-only { display: none; }
+#toolbar .tbicon svg, #toolbar .phone-icon { display: block; width: 16px; height: 16px; margin: 1px 2px; }
+#toolbar .phone-icon { display: none; }
+.touch-hint { display: none; }
+@media (hover: none) and (pointer: coarse) { .touch-hint { display: inline; } .mouse-hint { display: none; } }
+@media (max-width: 700px) {
+  #toolbar { gap: 4px; padding: 6px 8px; overflow-x: auto; scrollbar-width: none; }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar > * { flex: none; }
+  #toolbar button { padding: 6px 8px; }
+  #toolbar .spacer { flex: 1; min-width: 0; }
+  #docname, #viewSeg, #btnDebug, #indicator, #layoutSeg [data-layout="spread"], #tocTab, #searchTab, .handle { display: none; }
+  #layoutSeg [data-layout="page"] { border-radius: 0 5px 5px 0 !important; }
+  #btnSettings { order: 1; } #btnExport { order: 2; } /* if the bar must scroll, Aa stays in view first */
+  #toolbar .phone-icon { display: block; } #toolbar .wide-label { display: none; }
+  body.has-doc .compact-only { display: inline-block; }
+  body.has-doc #stage, body.has-doc #scrubbar { margin-left: 0; margin-right: 0; }
+  #pane { width: 100%; margin: 0; border-radius: 0; box-shadow: none; padding: 20px 18px 32px; min-height: 100%; }
+  body.paged #pane { height: 100%; padding: 16px 18px 0; }
+  .panel { left: 8px; right: 8px !important; min-width: 0; max-height: calc(100% - var(--tb-h, 40px) - 8px); overflow-y: auto; }
+  .panel input[type="range"] { width: auto; flex: 1; max-width: 180px; }
+  #toc, #search { width: 100%; max-width: none; }
+  #searchInput { font-size: 16px; } /* smaller text makes iOS zoom the page on focus */
+  #dropHint { padding: 6vh 4px; }
+  #dropHint .box { padding: 28px 16px; }
+}
+@media (max-width: 380px) {
+  #toolbar { gap: 3px; padding: 6px 4px; }
+  #toolbar button { padding: 6px 5px; }
+  #layoutSeg svg, #toolbar .tbicon svg { margin: 1px 0; }
+}
 </style>
 </head>
 <body class="chapter-breaks">
@@ -221,6 +258,8 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   <button id="btnOpen" title="Open a text file (O)">Open</button>
   <span id="docname"></span>
   <span class="spacer"></span>
+  <button id="btnTocTb" class="compact-only tbicon" title="Contents" aria-label="Contents"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button>
+  <button id="btnSearchTb" class="compact-only tbicon" title="Search" aria-label="Search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></button>
   <span class="seg" id="layoutSeg" role="group" aria-label="Layout">
     <button data-layout="scroll" data-label="Scroll: continuous (1)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 14V2h9v12"/><path d="M6 5h4M6 7.5h4"/><path d="M8 10v4m-2-2 2 2 2-2"/></svg></button><button data-layout="page" data-label="Page: one page at a time (2)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="1.5" width="9" height="13" rx="1"/><path d="M6 5h4M6 7.5h4M6 10h3"/></svg></button><button data-layout="spread" data-label="Spread: two facing pages (3)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.5C6.5 2.5 4 2.2 1.5 2.5v10c2.5-.3 5 0 6.5 1 1.5-1 4-1.3 6.5-1v-10c-2.5-.3-5 0-6.5 1z"/><path d="M8 3.5v10"/></svg></button>
   </span>
@@ -228,7 +267,7 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
     <button data-view="reflow">Reflowed</button><button data-view="raw">Raw</button>
   </span>
   <button id="btnDebug" title="Debug overlay (D)">Debug</button>
-  <button id="btnExport" title="Export">Export</button>
+  <button id="btnExport" title="Export" aria-label="Export"><svg class="phone-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8m-3-3 3 3 3-3"/><path d="M3 11v2.5h10V11"/></svg><span class="wide-label">Export</span></button>
   <button id="btnSettings" title="Reading settings">Aa</button>
   <span id="indicator"></span>
   <input type="file" id="fileInput" accept=".txt,.rtf,text/plain,application/rtf,text/rtf,*/*" hidden>
@@ -279,7 +318,7 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
         <div id="dropHint">
           <h1>Reflower</h1>
           <div>Comfortable reading for hard-wrapped text files.</div>
-          <div class="box" id="dropBox">Drop a <b>.txt</b> or <b>.rtf</b> file here, click to choose one, or paste text with Ctrl+V</div>
+          <div class="box" id="dropBox"><span class="mouse-hint">Drop a <b>.txt</b> or <b>.rtf</b> file here, click to choose one, or paste text with Ctrl+V</span><span class="touch-hint">Tap to choose a <b>.txt</b> or <b>.rtf</b> file</span></div>
           <div id="recent"></div>
         </div>
       </article>
@@ -1305,7 +1344,9 @@ const Reflow = (() => {
 
   const isPaged = () => !!doc && view === 'reflow' && S.layout !== 'scroll';
   // The layout actually in use: Raw always scrolls (with Scroll's width), whatever is saved for Reflowed.
-  const layoutNow = () => (doc && view === 'raw' ? 'scroll' : S.layout);
+  // Phones (same breakpoint as the compact CSS) have no room for Spread: the saved choice shows as Page.
+  const compactMQ = matchMedia('(max-width: 700px)');
+  const layoutNow = () => (doc && view === 'raw' ? 'scroll' : compactMQ.matches && S.layout === 'spread' ? 'page' : S.layout);
 
   /* ---------------- settings ---------------- */
   function applySettings() {
@@ -1610,7 +1651,7 @@ const Reflow = (() => {
     const paged = isPaged();
     document.documentElement.style.setProperty('--tb-h', $('#toolbar').offsetHeight + 'px'); // drawers sit below it, even when it wraps
     document.body.classList.toggle('paged', paged);
-    document.body.classList.toggle('spread', paged && S.layout === 'spread');
+    document.body.classList.toggle('spread', paged && layoutNow() === 'spread');
     const w = Math.min(S.widths[layoutNow()] || 760, window.innerWidth - 24);
     document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
     // With the search panel docked, the stage ends at the panel, but
@@ -1624,7 +1665,7 @@ const Reflow = (() => {
     content.style.width = content.style.height = content.style.columnCount = content.style.columnGap = content.style.columnFill = content.style.transform = '';
     if (paged) {
       const vw = Math.floor(viewport.clientWidth), vh = Math.floor(viewport.clientHeight);
-      Object.assign(content.style, { width: vw + 'px', height: vh + 'px', columnCount: S.layout === 'spread' ? 2 : 1, columnGap: GAP + 'px', columnFill: 'auto' });
+      Object.assign(content.style, { width: vw + 'px', height: vh + 'px', columnCount: layoutNow() === 'spread' ? 2 : 1, columnGap: GAP + 'px', columnFill: 'auto' });
       stride = vw + GAP;
       const sent = $('#endSentinel');
       pages = sent ? Math.max(1, Math.floor((sent.getBoundingClientRect().left - content.getBoundingClientRect().left) / stride) + 1) : 1;
@@ -1943,6 +1984,17 @@ const Reflow = (() => {
   $('#btnHome').addEventListener('click', goHome);
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
   $('#tocTab').addEventListener('click', () => toggleToc());
+  // compact toolbar stand-ins for the drawer tabs (stopPropagation: the document click handler closes the drawer)
+  $('#btnTocTb').addEventListener('click', e => { e.stopPropagation(); closeSearch(); toggleToc(); });
+  $('#btnSearchTb').addEventListener('click', e => { e.stopPropagation(); if (searchOpen()) closeSearch(); else openSearch(); });
+  // Crossing the breakpoint (rotation, window resize): Raw and Debug have no controls on a phone, so
+  // they are switched off; Spread <-> Page needs the buttons refreshed as well as a relayout.
+  compactMQ.addEventListener('change', () => {
+    if (!compactMQ.matches || !doc) { applySettings(); return; }
+    debug = false;
+    if (view === 'raw') { setView('reflow'); return; }
+    const a = holdAnchor(); applySettings(); relayout(a);
+  });
   $('#tocList').addEventListener('click', e => {
     const a = e.target.closest('a');
     if (!a) return;
