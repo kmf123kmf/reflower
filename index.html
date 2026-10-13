@@ -60,11 +60,13 @@ body.paged #viewport { flex: 1; min-height: 0; overflow: hidden; }
 body.paged #pager { display: flex; flex: none; height: 32px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; user-select: none; }
 #pager button { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 0 10px; line-height: 1; }
 #pager button:hover { color: var(--fg); }
-/* scrub bar (Page / Spread): app chrome along the bottom of the window, not part of the page. A range
+/* scrub bar: app chrome along the bottom of the window, not part of the page. A range
    input over a layer of chapter ticks; the 14px thumb travels 7px in from each end, so ticks and the
    tooltip use the same inset to line up with it. */
 #scrubbar { display: none; flex: none; height: 34px; padding: 0 16px; background: var(--ui); border-top: 1px solid var(--border); user-select: none; }
-body.paged #scrubbar { display: flex; align-items: center; }
+body.has-doc #scrubbar { display: flex; align-items: center; }
+body.has-doc #stage { scrollbar-width: none; } /* the scrub bar stands in for the scrollbar while reading */
+body.has-doc #stage::-webkit-scrollbar { display: none; }
 #scrub { position: relative; flex: 1; height: 100%; }
 #scrubRange { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 100%; margin: 0; background: transparent; cursor: pointer; --pct: 0%; }
 #scrubRange:focus { outline: none; }
@@ -170,7 +172,7 @@ body:not(.has-doc) #search { display: none; }
 #searchTab { position: absolute; right: 100%; top: 14px; width: 28px; padding: 14px 0; writing-mode: vertical-rl; font: inherit; letter-spacing: .08em; color: var(--muted); background: var(--ui); border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px; cursor: pointer; }
 #searchTab:hover, #search.open #searchTab { color: var(--fg); }
 #search .sbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-body.has-doc #stage, body.has-doc #scrubbar { margin-right: 28px; } /* a strip for the tab, clear of the page and the scrollbar */
+body.has-doc #stage, body.has-doc #scrubbar { margin-right: 28px; } /* a strip for the tab, clear of the page */
 @media (min-width: 860px) { body.has-doc.search-open #stage, body.has-doc.search-open #scrubbar { margin-right: 368px; } } /* room to spare: dock beside the page */
 #search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
 #searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
@@ -1521,7 +1523,7 @@ const Reflow = (() => {
     document.body.classList.toggle('spread', paged && S.layout === 'spread');
     const w = Math.min(S.widths[layoutNow()] || 760, window.innerWidth - 24);
     document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
-    // With the search panel docked, the stage ends at the panel (so its scrollbar stays usable), but
+    // With the search panel docked, the stage ends at the panel, but
     // the page keeps the place it had without the panel, moving left only as far as it must to clear it.
     pane.style.marginLeft = '';
     const docked = document.body.classList.contains('search-open') && parseFloat(getComputedStyle(stage).marginRight) > 28;
@@ -1536,13 +1538,13 @@ const Reflow = (() => {
       stride = vw + GAP;
       const sent = $('#endSentinel');
       pages = sent ? Math.max(1, Math.floor((sent.getBoundingClientRect().left - content.getBoundingClientRect().left) / stride) + 1) : 1;
-      measureChapters();
       if (anchor) page = pageOfAnchor(anchor);
       restoring = true; setPage(page, false); restoring = false;
     } else if (anchor) {
       restoreScrollAnchor(anchor);
     }
     ownScrollTop = stage.scrollTop;
+    measureChapters(); updateScrub();
     updateIndicator();
   }
 
@@ -1570,51 +1572,77 @@ const Reflow = (() => {
     updateIndicator();
   }
 
-  /* ---------------- scrub bar (Page / Spread) ---------------- */
-  // A slider over the whole book in the pager, with a tick where each chapter starts. Hover or drag
-  // shows "Page N of M · Chapter"; dragging turns pages live (no animation).
-  let chapters = []; // [{ page, label }] in reading order, measured on each paged relayout
+  /* ---------------- scrub bar ---------------- */
+  // A slider over the whole book along the bottom, with a tick where each chapter starts. Its position
+  // is the page in Page / Spread and the scroll offset in Scroll (so it moves smoothly there, and
+  // stands in for the hidden scrollbar). Hover or drag shows the progress readout plus the chapter;
+  // dragging moves the text live (no page-turn animation).
+  const SCROLL_STEPS = 1000; // range resolution in Scroll (pages are the steps in Page / Spread)
+  let chapters = []; // [{ pos, label }] in reading order, measured on each relayout
   const scrubRange = $('#scrubRange'), scrubTip = $('#scrubTip');
-  function measureChapters() { // call with the content untransformed (page 0 at the left)
-    const cl = content.getBoundingClientRect().left;
-    const plain = t => String(t).replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
-    chapters = (doc && doc.toc || []).filter(t => t.level > 0).map(t => {
-      const el = document.getElementById(t.id), r = el && el.getClientRects()[0];
-      return r && { page: Math.max(0, Math.min(pages - 1, Math.floor((r.left + 2 - cl) / stride))), label: plain(t.text) };
-    }).filter(Boolean);
-    scrubRange.max = Math.max(0, pages - 1);
-    $('#scrubTicks').innerHTML = pages > 1 ? chapters.map(c => `<i style="left:${(c.page / (pages - 1) * 100).toFixed(3)}%"></i>`).join('') : '';
+  const posMax = () => (isPaged() ? Math.max(0, pages - 1) : Math.max(0, stage.scrollHeight - stage.clientHeight));
+  const posNow = () => (isPaged() ? page : stage.scrollTop);
+  const posFrac = x => { const m = posMax(); return m ? Math.max(0, Math.min(1, x / m)) : 0; };
+  const anchorAtPos = x => (isPaged() ? anchorAtPage(x) : anchorAtScroll(x));
+  function measureChapters() {
+    chapters = [];
+    if (doc && doc.blocks) {
+      const paged = isPaged(), cl = content.getBoundingClientRect().left, max = posMax();
+      const top = stage.getBoundingClientRect().top - stage.scrollTop + READ_Y; // scrollTop 0's reading line
+      const plain = t => String(t).replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
+      doc.res.nodes.forEach((nd, i) => {
+        if (nd.type !== 'heading' || nd.boiler) return;
+        const el = view === 'raw' ? content.querySelector(`.rl[data-l="${nd.src[0]}"]`) : document.getElementById('n' + i);
+        const r = el && el.getClientRects()[0];
+        if (!r) return;
+        const pos = paged ? Math.floor((r.left + 2 - cl) / stride) : r.top - top; // its page / the scrollTop bringing it to the reading line
+        chapters.push({ pos: Math.max(0, Math.min(max, pos)), label: plain(nd.label) });
+      });
+    }
+    $('#scrubTicks').innerHTML = posMax() ? chapters.map(c => `<i style="left:${(posFrac(c.pos) * 100).toFixed(3)}%"></i>`).join('') : '';
   }
   function updateScrub() {
-    scrubRange.value = page;
-    scrubRange.style.setProperty('--pct', (pages > 1 ? page / (pages - 1) * 100 : 0) + '%');
-    if (scrubTip.classList.contains('show') && scrubDragging) showScrubTip(page);
+    if (!doc) return;
+    const x = posNow();
+    scrubRange.max = isPaged() ? posMax() : SCROLL_STEPS;
+    if (!scrubDragging) scrubRange.value = isPaged() ? x : Math.round(posFrac(x) * SCROLL_STEPS);
+    scrubRange.style.setProperty('--pct', posFrac(x) * 100 + '%');
   }
-  function chapterOfPage(p) {
+  function chapterAt(x) {
     let lo = 0, hi = chapters.length - 1, r = null;
-    while (lo <= hi) { const mid = (lo + hi) >> 1; if (chapters[mid].page <= p) { r = chapters[mid]; lo = mid + 1; } else hi = mid - 1; }
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (chapters[mid].pos <= x + 1) { r = chapters[mid]; lo = mid + 1; } else hi = mid - 1; }
     return r ? r.label : '';
   }
-  function showScrubTip(p) {
-    const ch = chapterOfPage(p), w = scrubRange.clientWidth - 14, a = anchorAtPage(p);
-    scrubTip.textContent = progressText(progressAt(a.src, p >= pages - 1), p) + (ch ? ' · ' + ch : '');
+  function showScrubTip(x) {
+    const a = anchorAtPos(x), ch = chapterAt(x), atEnd = isPaged() ? x >= pages - 1 : x >= posMax() - 1;
+    scrubTip.textContent = (a ? progressText(progressAt(a.src, atEnd), x) : '') + (ch ? ' · ' + ch : '');
     scrubTip.classList.add('show');
-    const x = 7 + (pages > 1 ? p / (pages - 1) : 0) * w, half = scrubTip.offsetWidth / 2; // kept inside the bar at the ends
-    scrubTip.style.left = Math.max(half, Math.min(scrubRange.clientWidth - half, x)) + 'px';
+    const px = 7 + posFrac(x) * (scrubRange.clientWidth - 14), half = scrubTip.offsetWidth / 2; // kept inside the bar at the ends
+    scrubTip.style.left = Math.max(half, Math.min(scrubRange.clientWidth - half, px)) + 'px';
   }
-  const pageAtX = x => { const r = scrubRange.getBoundingClientRect(); return Math.round(Math.max(0, Math.min(1, (x - r.left - 7) / Math.max(1, r.width - 14))) * Math.max(0, pages - 1)); };
+  const posAtX = cx => {
+    const r = scrubRange.getBoundingClientRect(), f = Math.max(0, Math.min(1, (cx - r.left - 7) / Math.max(1, r.width - 14)));
+    return isPaged() ? Math.round(f * posMax()) : f * posMax();
+  };
   let scrubDragging = false;
-  scrubRange.addEventListener('input', () => { setPage(+scrubRange.value, false); showScrubTip(page); });
+  scrubRange.addEventListener('input', () => {
+    const v = +scrubRange.value;
+    if (isPaged()) setPage(v, false); else stage.scrollTop = v / SCROLL_STEPS * posMax();
+    showScrubTip(posNow());
+  });
   scrubRange.addEventListener('pointerdown', () => { scrubDragging = true; });
-  scrubRange.addEventListener('pointermove', e => { if (!scrubDragging) showScrubTip(pageAtX(e.clientX)); });
+  scrubRange.addEventListener('pointermove', e => { if (!scrubDragging) showScrubTip(posAtX(e.clientX)); });
   scrubRange.addEventListener('pointerleave', () => { if (!scrubDragging) scrubTip.classList.remove('show'); });
   window.addEventListener('pointerup', () => {
     if (!scrubDragging) return;
     scrubDragging = false;
     scrubTip.classList.remove('show');
+    updateScrub();
     scrubRange.blur(); // hand the keyboard back to the reader's shortcuts
   });
   scrubRange.addEventListener('keyup', () => scrubTip.classList.remove('show'));
+  // Opening or closing folded boilerplate changes the length of the text (and, paged, the page count).
+  content.addEventListener('toggle', () => { if (doc) scheduleRelayout(); }, true);
 
   let progTimer = 0;
   function updateIndicator() {
@@ -1692,12 +1720,6 @@ const Reflow = (() => {
     return { caret, line: s, el, src: pos };
   }
 
-  function caretAt(x, y) {
-    if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); return r && { node: r.startContainer, offset: r.startOffset }; }
-    if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); return p && { node: p.offsetNode, offset: p.offset }; }
-    return null;
-  }
-
   // An anchor remembers the reading position as a DOM caret plus a source-line fallback,
   // so it survives relayouts (same DOM) and re-renders / view switches (new DOM).
   // The reading point: top-left of the page when paged; in scroll mode a line READ_Y px below the
@@ -1706,31 +1728,29 @@ const Reflow = (() => {
   function captureAnchor() {
     if (!doc || !doc.blocks || !doc.blocks.length) return null;
     stopTurn(); // finish any running page turn so rects are final
-    if (isPaged()) return anchorAtPage(page);
-    const vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
-    const y = Math.max(vr.top, sr.top) + READ_Y + 6;
-    // blocks are in reading order, so binary-search the first one that doesn't end before the point
-    const before = c => { const rs = c.getClientRects(), r = rs[rs.length - 1]; return !r || r.bottom <= y; };
-    const B = doc.blocks;
-    let lo = 0, hi = B.length;
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (before(B[mid])) lo = mid + 1; else hi = mid; }
-    const el = B[Math.min(lo, B.length - 1)];
-    let caret = null;
-    const er = [...el.getClientRects()].find(r => r.bottom > y);
-    if (er) caret = caretAt(er.left + 8, Math.max(er.top + 6, y));
-    if (caret && !el.contains(caret.node)) caret = null;
-    const line = el.dataset.l != null ? +el.dataset.l : +el.dataset.s;
-    return { caret, line, el, src: srcOf(el, caret) };
+    return isPaged() ? anchorAtPage(page) : anchorAtScroll(stage.scrollTop);
   }
 
-  // The reading point of page p (Page / Spread): the first character laid out on it. Measured with
-  // ranges rather than hit-testing, so it works for pages that aren't on screen (the scrub tooltip)
-  // and gives the footer the very same answer once the reader gets there.
+  // The reading point for a position that needn't be on screen (the scrub tooltip), measured with
+  // ranges rather than hit-testing, so the footer gives the very same answer once the reader is there.
+  // Page p (Page / Spread): the first character laid out on it. Scroll offset st: the first character
+  // on the line READ_Y px below the top edge, were the stage scrolled to st.
   function anchorAtPage(p) {
-    const B = doc.blocks, cl = content.getBoundingClientRect().left, edge = p * stride + 1;
-    const lastRight = rs => rs.length ? rs[rs.length - 1].right - cl : -Infinity; // relative to page 0
-    let lo = 0, hi = B.length; // first block that doesn't end before the page
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (lastRight(B[mid].getClientRects()) <= edge) lo = mid + 1; else hi = mid; }
+    const cl = content.getBoundingClientRect().left, edge = p * stride + 1;
+    return anchorWhere(rs => !rs.length || rs[rs.length - 1].right - cl <= edge);
+  }
+  function anchorAtScroll(st) {
+    const vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect(), d = st - stage.scrollTop;
+    const y = Math.max(vr.top, sr.top + d) + READ_Y + 6; // in today's coordinates
+    return anchorWhere(rs => !rs.length || rs[rs.length - 1].bottom <= y);
+  }
+  // `before(rects)`: does this box end before the reading point? Blocks and characters are in reading
+  // order, so both searches are binary.
+  function anchorWhere(before) {
+    const B = doc.blocks;
+    if (!B || !B.length) return null;
+    let lo = 0, hi = B.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (before(B[mid].getClientRects())) lo = mid + 1; else hi = mid; }
     const el = B[Math.min(lo, B.length - 1)], line = el.dataset.l != null ? +el.dataset.l : +el.dataset.s;
     const nodes = [], starts = [];
     let total = 0, n;
@@ -1740,11 +1760,11 @@ const Reflow = (() => {
     if (total) {
       const r = document.createRange();
       const at = i => { let k = nodes.length - 1; while (starts[k] > i) k--; return [nodes[k], i - starts[k]]; };
-      let a = 0, b = total; // first character that ends past the page's left edge
+      let a = 0, b = total;
       while (a < b) {
         const mid = (a + b) >> 1, [nd, off] = at(mid);
         r.setStart(nd, off); r.setEnd(nd, off + 1);
-        if (lastRight(r.getClientRects()) <= edge) a = mid + 1; else b = mid;
+        if (before(r.getClientRects())) a = mid + 1; else b = mid;
       }
       if (a < total) { const [nd, off] = at(a); caret = { node: nd, offset: off }; }
     }
@@ -1809,7 +1829,7 @@ const Reflow = (() => {
     const a = pendingAnchor; pendingAnchor = null; relayout(a);
   }
   window.addEventListener('resize', () => scheduleRelayout());
-  stage.addEventListener('scroll', () => { if (!isPaged()) updateIndicator(); });
+  stage.addEventListener('scroll', () => { if (!isPaged()) { updateIndicator(); updateScrub(); } });
 
   /* ---------------- pane resizing ---------------- */
   document.querySelectorAll('.handle').forEach(h => {
