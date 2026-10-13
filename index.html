@@ -11,9 +11,9 @@
   --fs: 19px;
   --lh: 1.6;
 }
-html[data-theme="light"] { --bg:#e8e5de; --paper:#fffdf8; --fg:#2b2a27; --muted:#8a857b; --accent:#9a5b2e; --border:#d8d2c6; --ui:#f6f3ec; --shadow:0 2px 18px rgba(0,0,0,.09); }
-html[data-theme="sepia"] { --bg:#d9ccb2; --paper:#f4ecd8; --fg:#5b4636; --muted:#9a8670; --accent:#8b4513; --border:#d3c3a5; --ui:#ece2cb; --shadow:0 2px 18px rgba(60,40,10,.12); }
-html[data-theme="dark"]  { --bg:#111214; --paper:#1c1d20; --fg:#d4d1ca; --muted:#85817a; --accent:#d9a066; --border:#34353a; --ui:#232428; --shadow:0 2px 18px rgba(0,0,0,.5); }
+html[data-theme="light"] { color-scheme: light; --bg:#e8e5de; --paper:#fffdf8; --fg:#2b2a27; --muted:#8a857b; --accent:#9a5b2e; --border:#d8d2c6; --ui:#f6f3ec; --shadow:0 2px 18px rgba(0,0,0,.09); }
+html[data-theme="sepia"] { color-scheme: light; --bg:#d9ccb2; --paper:#f4ecd8; --fg:#5b4636; --muted:#9a8670; --accent:#8b4513; --border:#d3c3a5; --ui:#ece2cb; --shadow:0 2px 18px rgba(60,40,10,.12); }
+html[data-theme="dark"]  { color-scheme: dark; --bg:#111214; --paper:#1c1d20; --fg:#d4d1ca; --muted:#85817a; --accent:#d9a066; --border:#34353a; --ui:#232428; --shadow:0 2px 18px rgba(0,0,0,.5); }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -39,6 +39,10 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 .panel.open { display: block; }
 .panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 7px 0; }
 .panel input[type="range"] { width: 130px; }
+/* dropdowns in the theme's colours, open list included (the browser draws that, on a light
+   background unless told otherwise, which left the dark theme's light text unreadable) */
+.panel select { background: var(--paper); }
+.panel option, .panel optgroup { background: var(--paper); color: var(--fg); }
 .panel h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 #settings { right: 10px; }
 #exportMenu { right: 120px; min-width: 180px; }
