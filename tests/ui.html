@@ -56,7 +56,10 @@ f.addEventListener('load', async () => {
     }
     if (q.get('toc')) { // click the Nth Contents entry
       const d = w.document, link = d.querySelectorAll('#tocList a')[+q.get('toc')];
+      d.getElementById('tocTab').click(); await new Promise(r => setTimeout(r, 300));
+      out.push(`contents drawer ${d.getElementById('toc').classList.contains('open') ? 'opened' : 'DID NOT OPEN'} from its tab`);
       link.click(); await new Promise(r => setTimeout(r, 400));
+      out.push(`after picking: drawer ${d.getElementById('toc').classList.contains('open') ? 'STILL OPEN' : 'closed'}`);
       const h = d.getElementById(link.dataset.id).getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect(), st = d.getElementById('stage').getBoundingClientRect();
       out.push(`toc "${link.textContent}" -> page ${app.state.page}, heading ${h.left >= v.left - 1 && h.right <= v.right + 1 && h.top >= st.top && h.bottom <= st.bottom ? 'visible' : 'NOT VISIBLE'} (y=${Math.round(h.top - st.top)})`);
     }

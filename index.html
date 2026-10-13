@@ -51,7 +51,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* ---------- stage / pane ---------- */
 #stage { flex: 1; min-height: 0; position: relative; overflow-y: auto; overflow-anchor: none; outline: none; }
 /* theme-coloured scrollbars, normal width so the thumb is easy to grab (the stage's is hidden while reading) */
-#stage, #searchList, #toc { scrollbar-color: color-mix(in srgb, var(--muted) 60%, transparent) transparent; }
+#stage, #searchList, #toc .tbody { scrollbar-color: color-mix(in srgb, var(--muted) 60%, transparent) transparent; }
 #pane { position: relative; width: min(var(--pane-w), calc(100% - 24px)); margin: 16px auto; background: var(--paper); box-shadow: var(--shadow); border-radius: 4px; padding: 48px 56px 56px; min-height: calc(100% - 32px); }
 .handle { position: absolute; top: 0; bottom: 0; width: 14px; cursor: ew-resize; z-index: 5; touch-action: none; }
 .handle.l { left: -7px; } .handle.r { right: -7px; }
@@ -161,8 +161,14 @@ body.debug #debugBox { display: block; }
 #debugBox input { width: 60px; font: inherit; }
 
 /* ---------- TOC ---------- */
-#toc { position: fixed; top: var(--tb-h, 41px); left: 0; bottom: 0; width: 300px; z-index: 15; background: var(--ui); border-right: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; padding: 12px 0; }
-#toc.open { transform: none; }
+/* A slide-out on the left, like search on the right: its tab hangs off the drawer's right edge, so
+   it shows at the window edge while the drawer is collapsed. Picking a chapter closes it. */
+#toc { position: fixed; top: var(--tb-h, 41px); left: 0; bottom: 0; width: 300px; max-width: calc(100% - 28px); z-index: 15; display: flex; flex-direction: column; background: var(--ui); border-right: 1px solid var(--border); transform: translateX(-100%); transition: transform .2s ease, box-shadow .2s; }
+#toc.open { transform: none; box-shadow: var(--shadow); }
+body:not(.has-doc) #toc { display: none; }
+#tocTab { position: absolute; left: 100%; top: 14px; width: 28px; padding: 14px 0; writing-mode: vertical-rl; font: inherit; letter-spacing: .08em; color: var(--muted); background: var(--ui); border: 1px solid var(--border); border-left: 0; border-radius: 0 6px 6px 0; cursor: pointer; }
+#tocTab:hover, #toc.open #tocTab { color: var(--fg); }
+#toc .tbody { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 0; }
 #toc h4 { margin: 0 16px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 #toc a { display: block; padding: 5px 16px; color: var(--fg); text-decoration: none; font-family: var(--font); font-size: 14px; }
 #toc a:hover { background: var(--paper); }
@@ -178,7 +184,7 @@ body:not(.has-doc) #search { display: none; }
 #searchTab { position: absolute; right: 100%; top: 14px; width: 28px; padding: 14px 0; writing-mode: vertical-rl; font: inherit; letter-spacing: .08em; color: var(--muted); background: var(--ui); border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px; cursor: pointer; }
 #searchTab:hover, #search.open #searchTab { color: var(--fg); }
 #search .sbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-body.has-doc #stage, body.has-doc #scrubbar { margin-right: 28px; } /* a strip for the tab, clear of the page */
+body.has-doc #stage, body.has-doc #scrubbar { margin-left: 28px; margin-right: 28px; } /* strips for the Contents and Search tabs, clear of the page */
 @media (min-width: 860px) { body.has-doc.search-open #stage, body.has-doc.search-open #scrubbar { margin-right: 368px; } } /* room to spare: dock beside the page */
 #search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
 #searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
@@ -203,7 +209,6 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
 
 <header id="toolbar">
   <button id="btnHome" title="Home: recent files (H)">Home</button>
-  <button id="btnToc" title="Contents (T)">&#9776; Contents</button>
   <button id="btnOpen" title="Open a text file (O)">Open</button>
   <span id="docname"></span>
   <span class="spacer"></span>
@@ -238,7 +243,10 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   <button id="expHtml">Web page (.html)</button>
 </div>
 
-<nav id="toc"><h4>Contents</h4><div id="tocList"><div class="empty">No document loaded</div></div></nav>
+<nav id="toc">
+  <button id="tocTab" title="Contents (T)" aria-expanded="false" aria-controls="toc">Contents</button>
+  <div class="tbody" inert><h4>Contents</h4><div id="tocList"><div class="empty">No document loaded</div></div></div>
+</nav>
 
 <aside id="search">
   <button id="searchTab" title="Search (/)" aria-expanded="false" aria-controls="search">Search</button>
@@ -1196,7 +1204,10 @@ const Reflow = (() => {
     while (lo <= hi) { const mid = (lo + hi) >> 1; if (keyAt(mid) <= x) { r = mid; lo = mid + 1; } else hi = mid - 1; }
     return r;
   }
-  const toggleToc = on => $('#toc').classList.toggle('open', on);
+  function toggleToc(on) { // the Contents drawer; omit `on` to toggle
+    const open = $('#toc').classList.toggle('open', on);
+    $('#toc .tbody').inert = !open; $('#tocTab').setAttribute('aria-expanded', open);
+  }
   const stage = $('#stage'), pane = $('#pane'), viewport = $('#viewport'), content = $('#content');
   // Reading fonts. Each choice tries its faces in order and uses (and is named after) the first one
   // installed, so the same menu suits Windows, macOS and Linux. A choice that finds none of its faces
@@ -1918,7 +1929,7 @@ const Reflow = (() => {
   $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
   $('#btnHome').addEventListener('click', goHome);
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
-  $('#btnToc').addEventListener('click', () => toggleToc());
+  $('#tocTab').addEventListener('click', () => toggleToc());
   $('#tocList').addEventListener('click', e => {
     const a = e.target.closest('a');
     if (!a) return;
@@ -1938,7 +1949,7 @@ const Reflow = (() => {
   }));
   document.addEventListener('click', e => {
     Object.values(panels).forEach(s => { if (!e.target.closest(s)) $(s).classList.remove('open'); });
-    if (!e.target.closest('#toc') && !e.target.closest('#btnToc')) toggleToc(false);
+    if (!e.target.closest('#toc')) toggleToc(false);
   });
 
   /* ---------------- search ---------------- */
