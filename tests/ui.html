@@ -95,6 +95,14 @@ f.addEventListener('load', async () => {
         await new Promise(r => setTimeout(r, 300));
         d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
         out.push(`tapped row ${q.get('tap')}; keyboard ${d.activeElement === inp ? 'STILL UP (input focused)' : 'dismissed'}`);
+        if (q.get('dbl')) { // &dbl=1: tap the same row again straight away (a double tap closes the sheet on phones)
+          const hc = w.CSS.highlights.get('search-cur'), range = hc && [...hc][0];
+          await new Promise(r => setTimeout(r, 150));
+          d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
+          d.getAnimations().forEach(a => a.finish());
+          const r = range && range.getClientRects()[0], st = d.getElementById('stage').getBoundingClientRect(), v = d.getElementById('viewport').getBoundingClientRect();
+          out.push(`double tap: panel ${app.state.search && d.getElementById('search').classList.contains('open') ? 'STILL OPEN' : 'closed'}; match ${r && r.top >= Math.max(st.top, v.top) && r.bottom <= Math.min(st.bottom, v.bottom) && r.left >= v.left - 1 && r.right <= v.right + 1 ? 'still visible' : 'NOT VISIBLE'} (y=${r ? Math.round(r.top) : '?'}; text area y ${Math.round(Math.max(st.top, v.top))}-${Math.round(Math.min(st.bottom, v.bottom))})`);
+        }
       }
       await new Promise(r => setTimeout(r, 400)); // let the page turn finish
       const s = app.state.search;

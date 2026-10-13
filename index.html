@@ -246,6 +246,7 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   #search { bottom: auto; height: var(--sheet-h); border-left: 0; border-bottom: 1px solid var(--border); transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
   #search.open { opacity: 1; visibility: visible; transition: opacity .15s; }
   body.has-doc.search-open #stage { margin-top: var(--sheet-h); }
+  #searchList .hit { touch-action: manipulation; } /* double tap closes the sheet rather than zooming */
   #searchInput { font-size: 16px; } /* smaller text makes iOS zoom the page on focus */
   #dropHint { padding: 6vh 4px; }
   #dropHint .box { padding: 28px 16px; }
@@ -2212,11 +2213,19 @@ const Reflow = (() => {
   $('#searchClose').addEventListener('click', closeSearch);
   $('#searchNext').addEventListener('click', () => { flushSearch(); searchGo(1); });
   $('#searchPrev').addEventListener('click', () => { flushSearch(); searchGo(-1); });
+  // Phones: a tap shows the match below the sheet; a second tap on the same row within half a second
+  // closes the sheet, keeping the match on screen (detected here: iOS doesn't reliably fire dblclick).
+  let lastTap = { k: -1, t: 0 };
   $('#searchList').addEventListener('click', e => {
     const b = e.target.closest('.hit');
     if (!b) return;
-    if (compactMQ.matches && document.activeElement === $('#searchInput')) $('#searchInput').blur(); // phones: drop the keyboard so the page shows
-    selectHit(+b.dataset.k);
+    const k = +b.dataset.k, now = Date.now();
+    if (compactMQ.matches) {
+      if (k === lastTap.k && now - lastTap.t < 500) { lastTap = { k: -1, t: 0 }; closeSearch(); return; }
+      lastTap = { k, t: now };
+      if (document.activeElement === $('#searchInput')) $('#searchInput').blur(); // drop the keyboard so the page shows
+    }
+    selectHit(k);
   });
   $('#searchBack').addEventListener('click', () => {
     if (SR.origin == null || !doc) return;
