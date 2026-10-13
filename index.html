@@ -2,7 +2,13 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- "Add to Home Screen" opens full screen, without the browser's toolbars -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Reflower">
+<meta name="theme-color" content="#f6f3ec">
 <title>Reflower</title>
 <style>
 :root {
@@ -34,7 +40,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* Tooltips: data-tip on any element; shown below it after a short hover (or on keyboard focus). */
 [data-tip] { position: relative; }
 [data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 40; padding: 3px 8px; border-radius: 4px; background: var(--fg); color: var(--paper); font: 12px/1.4 "Segoe UI", system-ui, sans-serif; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .1s; }
-[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transition-delay: .3s; }
+[data-tip]:focus-visible::after { opacity: 1; transition-delay: .3s; }
+@media (hover: hover) { [data-tip]:hover::after { opacity: 1; transition-delay: .3s; } } /* touch: a tap would leave it stuck on */
 .seg { display: inline-flex; }
 .seg button { border-radius: 0 !important; margin-left: -1px; }
 .seg button:first-child { border-radius: 5px 0 0 5px !important; margin-left: 0; }
@@ -44,7 +51,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #indicator, #pgLabel { cursor: pointer; user-select: none; }
 #indicator:hover, #pgLabel:hover { color: var(--fg); }
 
-.panel { position: absolute; top: 40px; z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
+.panel { position: absolute; top: var(--tb-h, 40px); z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
 .panel.open { display: block; }
 .panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 7px 0; }
 .panel input[type="range"] { width: 130px; }
@@ -69,7 +76,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #viewport { position: relative; }
 #pager { display: none; }
 
-body.paged #stage { overflow: hidden; }
+body.paged #stage { overflow: hidden; touch-action: pan-y; } /* sideways drags are ours (swipe to turn); vertical stays the browser's */
 body.paged #pane { height: calc(100% - 32px); min-height: 0; display: flex; flex-direction: column; padding: 40px 56px 8px; }
 body.paged #viewport { flex: 1; min-height: 0; overflow: hidden; }
 body.paged #pager { display: flex; flex: none; height: 32px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; user-select: none; }
@@ -212,6 +219,71 @@ body.has-doc #stage, body.has-doc #scrubbar { margin-left: 28px; margin-right: 2
 ::highlight(search-cur) { background-color: #ff9632; color: #000; }
 html[data-theme="dark"] ::highlight(search) { background-color: rgba(217, 160, 102, .3); }
 html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; color: #111; }
+
+/* ---------- compact (phones) ---------- */
+/* Below 700px the page takes the full width, Contents/Search move into the toolbar, and desktop-only
+   controls (Spread, Raw, Debug, file name, indicator, resize handles) are hidden. The JS side uses the
+   same breakpoint (compactMQ) to treat a saved Spread as Page. */
+.compact-only { display: none; }
+#toolbar .tbicon svg, #toolbar .phone-icon { display: block; width: 16px; height: 16px; margin: 1px 2px; }
+#toolbar .phone-icon { display: none; }
+.touch-hint { display: none; }
+@media (hover: none) and (pointer: coarse) { .touch-hint { display: inline; } .mouse-hint { display: none; } }
+@media (max-width: 700px) {
+  #toolbar { gap: 4px; padding: 6px 8px; overflow-x: auto; scrollbar-width: none; }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar > * { flex: none; }
+  #toolbar button { padding: 6px 8px; }
+  #toolbar .spacer { flex: 1; min-width: 0; }
+  #docname, #viewSeg, #btnDebug, #indicator, #layoutSeg [data-layout="spread"], #tocTab, #searchTab, .handle { display: none; }
+  #layoutSeg [data-layout="page"] { border-radius: 0 5px 5px 0 !important; }
+  #btnSettings { order: 1; } #btnExport { order: 2; } /* if the bar must scroll, Aa stays in view first */
+  #toolbar .phone-icon { display: block; } #toolbar .wide-label { display: none; }
+  body.has-doc .compact-only { display: inline-block; }
+  body.has-doc #stage, body.has-doc #scrubbar { margin-left: 0; margin-right: 0; }
+  #pane { width: 100%; margin: 0; border-radius: 0; box-shadow: none; padding: 20px 18px 32px; min-height: 100%; }
+  body.paged #pane { height: 100%; padding: 16px 18px 0; }
+  .panel { left: 8px; right: 8px !important; min-width: 0; max-height: calc(100% - var(--tb-h, 40px) - 8px); overflow-y: auto; }
+  .panel input[type="range"] { width: auto; flex: 1; max-width: 180px; }
+  #toc, #search { width: 100%; max-width: none; }
+  /* Search is a sheet under the toolbar and the page lays itself out in the space below it, so a tapped
+     result shows in context. At the top rather than the bottom: the on-screen keyboard covers the bottom. */
+  body { --sheet-h: min(42vh, 380px); }
+  #search { bottom: auto; height: var(--sheet-h); border-left: 0; border-bottom: 1px solid var(--border); transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
+  #search.open { opacity: 1; visibility: visible; transition: opacity .15s; }
+  body.has-doc.search-open #stage { margin-top: var(--sheet-h); }
+  #searchList .hit { touch-action: manipulation; } /* double tap closes the sheet rather than zooming */
+  #searchInput { font-size: 16px; } /* smaller text makes iOS zoom the page on focus */
+  #dropHint { padding: 6vh 4px; }
+  #dropHint .box { padding: 28px 16px; }
+}
+@media (max-width: 380px) {
+  #toolbar { gap: 3px; padding: 6px 4px; }
+  #toolbar button { padding: 6px 5px; }
+  #layoutSeg svg, #toolbar .tbicon svg { margin: 1px 0; }
+}
+
+/* ---------- auto-hiding bars (phones, portrait or landscape: body.autohide, set from autoMQ) ---------- */
+/* While a book is open the toolbar and scrub bar float over the text instead of taking space from
+   it, so hiding or showing them never re-lays out the book (page breaks stay put). Hidden bars slide
+   off screen but stay focusable: keyboard / VoiceOver focus brings them back. */
+#progLine { display: none; }
+body.autohide { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+body.autohide.has-doc #stage { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+body.autohide.has-doc #toolbar { position: fixed; top: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); padding-top: max(6px, env(safe-area-inset-top)); box-shadow: var(--shadow); transition: transform .2s ease, opacity .2s, box-shadow .2s; }
+body.autohide.has-doc #scrubbar { position: fixed; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); z-index: 14; height: calc(34px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); transition: transform .2s ease, opacity .2s; }
+body.autohide.has-doc.chrome-hidden #toolbar { transform: translateY(-100%); box-shadow: none; pointer-events: none; }
+body.autohide.has-doc.chrome-hidden #scrubbar { transform: translateY(100%); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  body.autohide.has-doc #toolbar, body.autohide.has-doc #scrubbar { transition: opacity .15s; }
+  body.autohide.has-doc.chrome-hidden #toolbar, body.autohide.has-doc.chrome-hidden #scrubbar { transform: none; opacity: 0; }
+}
+@media (max-width: 700px) { body.autohide.has-doc.search-open #stage { margin-top: calc(var(--tb-h, 41px) + var(--sheet-h)); } } /* the sheet hangs below the floating toolbar */
+/* where you are, while the bars are hidden */
+body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed; left: 0; bottom: env(safe-area-inset-bottom); height: 2px; background: var(--accent); opacity: .6; z-index: 14; pointer-events: none; }
+/* one-time tip, the first time the bars hide */
+#chromeHint { position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 18px; background: var(--fg); color: var(--paper); font-size: 13px; text-align: center; box-shadow: var(--shadow); pointer-events: none; opacity: 0; transition: opacity .3s; }
+#chromeHint.show { opacity: .92; }
 </style>
 </head>
 <body class="chapter-breaks">
@@ -221,6 +293,8 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   <button id="btnOpen" title="Open a text file (O)">Open</button>
   <span id="docname"></span>
   <span class="spacer"></span>
+  <button id="btnTocTb" class="compact-only tbicon" title="Contents" aria-label="Contents"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button>
+  <button id="btnSearchTb" class="compact-only tbicon" title="Search" aria-label="Search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></button>
   <span class="seg" id="layoutSeg" role="group" aria-label="Layout">
     <button data-layout="scroll" data-label="Scroll: continuous (1)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 14V2h9v12"/><path d="M6 5h4M6 7.5h4"/><path d="M8 10v4m-2-2 2 2 2-2"/></svg></button><button data-layout="page" data-label="Page: one page at a time (2)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="1.5" width="9" height="13" rx="1"/><path d="M6 5h4M6 7.5h4M6 10h3"/></svg></button><button data-layout="spread" data-label="Spread: two facing pages (3)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.5C6.5 2.5 4 2.2 1.5 2.5v10c2.5-.3 5 0 6.5 1 1.5-1 4-1.3 6.5-1v-10c-2.5-.3-5 0-6.5 1z"/><path d="M8 3.5v10"/></svg></button>
   </span>
@@ -228,7 +302,7 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
     <button data-view="reflow">Reflowed</button><button data-view="raw">Raw</button>
   </span>
   <button id="btnDebug" title="Debug overlay (D)">Debug</button>
-  <button id="btnExport" title="Export">Export</button>
+  <button id="btnExport" title="Export" aria-label="Export"><svg class="phone-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8m-3-3 3 3 3-3"/><path d="M3 11v2.5h10V11"/></svg><span class="wide-label">Export</span></button>
   <button id="btnSettings" title="Reading settings">Aa</button>
   <span id="indicator"></span>
   <input type="file" id="fileInput" accept=".txt,.rtf,text/plain,application/rtf,text/rtf,*/*" hidden>
@@ -279,7 +353,7 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
         <div id="dropHint">
           <h1>Reflower</h1>
           <div>Comfortable reading for hard-wrapped text files.</div>
-          <div class="box" id="dropBox">Drop a <b>.txt</b> or <b>.rtf</b> file here, click to choose one, or paste text with Ctrl+V</div>
+          <div class="box" id="dropBox"><span class="mouse-hint">Drop a <b>.txt</b> or <b>.rtf</b> file here, click to choose one, or paste text with Ctrl+V</span><span class="touch-hint">Tap to choose a <b>.txt</b> or <b>.rtf</b> file</span></div>
           <div id="recent"></div>
         </div>
       </article>
@@ -291,6 +365,8 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
 <footer id="scrubbar"><div id="scrub"><input type="range" id="scrubRange" min="0" max="0" step="1" value="0" aria-label="Page"><div id="scrubTicks"></div><div id="scrubTip"></div></div></footer>
 
 <div id="debugBox"></div>
+<div id="progLine"></div>
+<div id="chromeHint" aria-hidden="true">Tap the middle of the page to show the controls</div>
 
 <!-- ======================================================================
      Reflow engine: pure functions, no DOM access.
@@ -1216,6 +1292,7 @@ const Reflow = (() => {
   function toggleToc(on) { // the Contents drawer; omit `on` to toggle
     const open = $('#toc').classList.toggle('open', on);
     $('#toc .tbody').inert = !open; $('#tocTab').setAttribute('aria-expanded', open);
+    if (open) setChrome(false); // the drawer hangs from the toolbar
   }
   const stage = $('#stage'), pane = $('#pane'), viewport = $('#viewport'), content = $('#content');
   // Reading fonts. Each choice tries its faces in order and uses (and is named after) the first one
@@ -1305,12 +1382,18 @@ const Reflow = (() => {
 
   const isPaged = () => !!doc && view === 'reflow' && S.layout !== 'scroll';
   // The layout actually in use: Raw always scrolls (with Scroll's width), whatever is saved for Reflowed.
-  const layoutNow = () => (doc && view === 'raw' ? 'scroll' : S.layout);
+  // Phones (same breakpoint as the compact CSS) have no room for Spread: the saved choice shows as Page.
+  const compactMQ = matchMedia('(max-width: 700px)');
+  const layoutNow = () => (doc && view === 'raw' ? 'scroll' : compactMQ.matches && S.layout === 'spread' ? 'page' : S.layout);
+  // Phones, held either way (a landscape phone is wider than the compact breakpoint but short):
+  // the toolbar and scrub bar float over the text and hide while reading (see "auto-hiding bars").
+  const autoMQ = matchMedia('(max-width: 700px), (pointer: coarse) and (max-height: 500px)');
 
   /* ---------------- settings ---------------- */
   function applySettings() {
     const root = document.documentElement;
     root.dataset.theme = S.theme;
+    $('meta[name="theme-color"]').content = getComputedStyle(root).getPropertyValue('--ui').trim(); // browser bars match the theme
     root.style.setProperty('--font', fontOf(S.font).stack);
     root.style.setProperty('--fs', S.fs + 'px');
     root.style.setProperty('--lh', S.lh);
@@ -1364,12 +1447,12 @@ const Reflow = (() => {
   }
 
   // `src` is the file as decoded (RTF still raw): Recent keeps it, and its hash keys the saved position.
-  function openSource(src, name) {
+  function openSource(src, name, fromHistory = false) {
     const key = hashText(src);
     if (/\.rtf$/i.test(name) || /^\s*\{\\rtf/.test(src.slice(0, 32))) {
       const r = Reflow.fromRTF(src);
-      loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF' });
-    } else loadText(src, name, { key });
+      loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF', fromHistory });
+    } else loadText(src, name, { key, fromHistory });
     Recent.add({ key, name, src, title: doc.metaTitle || doc.res.stats.title || '' });
   }
 
@@ -1382,8 +1465,30 @@ const Reflow = (() => {
     render(null);
     const a = savedAnchor();
     if (a) { relayout(a); held = a; }
+    syncAutoHide(); setChrome(false); // a newly opened book starts with the bars showing
+    if (!extra.fromHistory) history.pushState({ book: doc.key }, ''); // so Back returns Home (see "history")
     stage.focus();
   }
+
+  /* ---------------- history ---------------- */
+  // Each opened book gets a history entry (no URL change), so the browser's Back, including Safari's
+  // edge swipe, returns to Home instead of leaving the site, and Forward reopens the book from Recent.
+  // Home in the app goes Back too, keeping the two in step.
+  function leaveBook() {
+    if (!doc) return;
+    if (history.state && history.state.book) history.back(); else goHome();
+  }
+  window.addEventListener('popstate', async e => {
+    const key = e.state && e.state.book;
+    if (!key) { if (doc) goHome(); return; }
+    if (doc && doc.key === key) return;
+    let r = null;
+    try { r = await Recent.get(key); } catch { /* no IndexedDB */ }
+    if (r) openSource(r.src, r.name, true);
+    else { history.replaceState(null, ''); if (doc) goHome(); } // not kept (too big, private window): Home
+  });
+  // A reload keeps history.state, but nothing reopens automatically: start from Home.
+  if (history.state && history.state.book) history.replaceState(null, '');
 
   function hashText(t) { // FNV-1a plus length, so collisions are vanishingly rare
     let h = 0x811c9dc5;
@@ -1563,6 +1668,7 @@ const Reflow = (() => {
     document.title = HOME_TITLE;
     $('#tocList').innerHTML = '<div class="empty">No document loaded</div>';
     toggleToc(false);
+    setChrome(false); // Home always shows the bars (Open lives there)
     renderDebug(); applySettings(); relayout(null);
     stage.scrollTop = 0;
     updateIndicator();
@@ -1612,7 +1718,7 @@ const Reflow = (() => {
     const paged = isPaged();
     document.documentElement.style.setProperty('--tb-h', $('#toolbar').offsetHeight + 'px'); // drawers sit below it, even when it wraps
     document.body.classList.toggle('paged', paged);
-    document.body.classList.toggle('spread', paged && S.layout === 'spread');
+    document.body.classList.toggle('spread', paged && layoutNow() === 'spread');
     const w = Math.min(S.widths[layoutNow()] || 760, window.innerWidth - 24);
     document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
     // With the search panel docked, the stage ends at the panel, but
@@ -1626,7 +1732,7 @@ const Reflow = (() => {
     content.style.width = content.style.height = content.style.columnCount = content.style.columnGap = content.style.columnFill = content.style.transform = '';
     if (paged) {
       const vw = Math.floor(viewport.clientWidth), vh = Math.floor(viewport.clientHeight);
-      Object.assign(content.style, { width: vw + 'px', height: vh + 'px', columnCount: S.layout === 'spread' ? 2 : 1, columnGap: GAP + 'px', columnFill: 'auto' });
+      Object.assign(content.style, { width: vw + 'px', height: vh + 'px', columnCount: layoutNow() === 'spread' ? 2 : 1, columnGap: GAP + 'px', columnFill: 'auto' });
       stride = vw + GAP;
       const sent = $('#endSentinel');
       pages = sent ? Math.max(1, Math.floor((sent.getBoundingClientRect().left - content.getBoundingClientRect().left) / stride) + 1) : 1;
@@ -1660,6 +1766,7 @@ const Reflow = (() => {
         { offset: 1, transform: x(page), opacity: 1 },
       ], { duration: 240 });
     }
+    if (page !== from && !restoring) setChrome(true); // reading on: phones tuck the bars away
     updateScrub();
     updateIndicator();
   }
@@ -1694,6 +1801,7 @@ const Reflow = (() => {
     scrubRange.max = isPaged() ? posMax() : SCROLL_STEPS;
     if (!scrubDragging) scrubRange.value = isPaged() ? x : Math.round(posFrac(x) * SCROLL_STEPS);
     scrubRange.style.setProperty('--pct', posFrac(x) * 100 + '%');
+    $('#progLine').style.width = posFrac(x) * 100 + '%';
   }
   function chapterAt(x) { const k = lastAtOrBefore(marks.length, j => marks[j].pos, x + 1); return k < 0 ? '' : marks[k].label; }
   function showScrubTip(x) {
@@ -1906,7 +2014,19 @@ const Reflow = (() => {
     const a = pendingAnchor; pendingAnchor = null; relayout(a);
   }
   window.addEventListener('resize', () => scheduleRelayout());
-  stage.addEventListener('scroll', () => { if (!isPaged()) { updateIndicator(); updateScrub(); } });
+  // Scroll layout on phones: scrolling down hides the bars and scrolling up brings them back, each
+  // after ~30px so small movements don't flicker them. Scrolls the app makes itself (relayout,
+  // jumping to a chapter or match) leave ownScrollTop at the new position and don't count.
+  let scrollBase = 0;
+  stage.addEventListener('scroll', () => {
+    if (isPaged()) return;
+    updateIndicator(); updateScrub();
+    const y = stage.scrollTop;
+    if (Math.abs(y - ownScrollTop) < 1 || scrubDragging) { scrollBase = y; return; }
+    if (y <= 0) { setChrome(false); scrollBase = 0; }
+    else if (y - scrollBase > 30) { setChrome(true); scrollBase = y; }
+    else if (y - scrollBase < -30) { setChrome(false); scrollBase = y; }
+  });
 
   /* ---------------- pane resizing ---------------- */
   document.querySelectorAll('.handle').forEach(h => {
@@ -1942,9 +2062,20 @@ const Reflow = (() => {
   document.querySelectorAll('#viewSeg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
   $('#btnDebug').addEventListener('click', () => { const a = holdAnchor(); debug = !debug; applySettings(); relayout(a); });
   $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
-  $('#btnHome').addEventListener('click', goHome);
+  $('#btnHome').addEventListener('click', leaveBook);
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
   $('#tocTab').addEventListener('click', () => toggleToc());
+  // compact toolbar stand-ins for the drawer tabs (stopPropagation: the document click handler closes the drawer)
+  $('#btnTocTb').addEventListener('click', e => { e.stopPropagation(); closeSearch(); toggleToc(); });
+  $('#btnSearchTb').addEventListener('click', e => { e.stopPropagation(); if (searchOpen()) closeSearch(); else openSearch(); });
+  // Crossing the breakpoint (rotation, window resize): Raw and Debug have no controls on a phone, so
+  // they are switched off; Spread <-> Page needs the buttons refreshed as well as a relayout.
+  compactMQ.addEventListener('change', () => {
+    if (!compactMQ.matches || !doc) { applySettings(); return; }
+    debug = false;
+    if (view === 'raw') { setView('reflow'); return; }
+    const a = holdAnchor(); applySettings(); relayout(a);
+  });
   $('#tocList').addEventListener('click', e => {
     const a = e.target.closest('a');
     if (!a) return;
@@ -2115,6 +2246,7 @@ const Reflow = (() => {
   function openSearch() {
     if (!doc) return;
     toggleToc(false);
+    setChrome(false);
     if (!searchOpen()) {
       $('#search').classList.add('open');
       $('#search .sbody').inert = false; $('#searchTab').setAttribute('aria-expanded', 'true');
@@ -2156,7 +2288,20 @@ const Reflow = (() => {
   $('#searchClose').addEventListener('click', closeSearch);
   $('#searchNext').addEventListener('click', () => { flushSearch(); searchGo(1); });
   $('#searchPrev').addEventListener('click', () => { flushSearch(); searchGo(-1); });
-  $('#searchList').addEventListener('click', e => { const b = e.target.closest('.hit'); if (b) selectHit(+b.dataset.k); });
+  // Phones: a tap shows the match below the sheet; a second tap on the same row within half a second
+  // closes the sheet, keeping the match on screen (detected here: iOS doesn't reliably fire dblclick).
+  let lastTap = { k: -1, t: 0 };
+  $('#searchList').addEventListener('click', e => {
+    const b = e.target.closest('.hit');
+    if (!b) return;
+    const k = +b.dataset.k, now = Date.now();
+    if (compactMQ.matches) {
+      if (k === lastTap.k && now - lastTap.t < 500) { lastTap = { k: -1, t: 0 }; closeSearch(); return; }
+      lastTap = { k, t: now };
+      if (document.activeElement === $('#searchInput')) $('#searchInput').blur(); // drop the keyboard so the page shows
+    }
+    selectHit(k);
+  });
   $('#searchBack').addEventListener('click', () => {
     if (SR.origin == null || !doc) return;
     const a = anchorAtSrc(SR.origin);
@@ -2200,7 +2345,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     const k = e.key;
     if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); toggleToc(false); closeSearch(); return; }
     if (k === 'o' || k === 'O') { $('#fileInput').click(); return; }
-    if (k === 'h' || k === 'H') { goHome(); return; }
+    if (k === 'h' || k === 'H') { leaveBook(); return; }
     if (!doc) return;
     if (k === 't' || k === 'T') { toggleToc(); return; }
     if (k === '/') { e.preventDefault(); openSearch(); return; }
@@ -2234,14 +2379,115 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
 
   // Tap zones: the outer quarters of the text, extended out through the page margins and the
   // background on either side, so clicking anywhere left or right of the text turns the page.
+  // The middle (or, in Scroll, anywhere) shows / hides the bars on phones.
   stage.addEventListener('click', e => {
-    if (!isPaged() || String(window.getSelection())) return;
+    if (String(window.getSelection()) || tapClosedSomething || Date.now() - swipedAt < 350) return; // a swipe's lift isn't a tap
     if (e.target.closest('button, a, summary, input, select, .handle, #pager')) return;
-    const r = viewport.getBoundingClientRect(), zone = r.width * 0.25;
-    if (e.clientX < r.left + zone) setPage(page - 1); else if (e.clientX > r.right - zone) setPage(page + 1);
+    if (isPaged()) {
+      const r = viewport.getBoundingClientRect(), zone = r.width * 0.25;
+      if (e.clientX < r.left + zone) { setPage(page - 1); return; }
+      if (e.clientX > r.right - zone) { setPage(page + 1); return; }
+    }
+    if (autoHiding()) setChrome(!chromeHidden);
   });
   $('#pgPrev').addEventListener('click', () => setPage(page - 1));
   $('#pgNext').addEventListener('click', () => setPage(page + 1));
+
+  /* ---------------- swipe to turn pages (touch, Page / Spread) ---------------- */
+  // The column strip follows the finger (the neighbouring page slides in beside it); let go past a
+  // fifth of the width, or with a flick, to turn, otherwise it springs back. Touches starting within
+  // SWIPE_EDGE px of the screen's sides are left alone: Safari's back/forward and Android's back
+  // gestures live there and can't be overridden. Vertical moves, pinches and text selection don't swipe.
+  const SWIPE_EDGE = 24;
+  let swipe = null, swipedAt = 0;
+  const stripX = n => -n * stride;
+  stage.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' || !e.isPrimary || !isPaged()) return;
+    if (e.clientX < SWIPE_EDGE || e.clientX > window.innerWidth - SWIPE_EDGE) return;
+    if (e.target.closest('button, a, summary, input, select, #pager')) return;
+    swipe = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, on: false, pts: [] };
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!swipe || e.pointerId !== swipe.id) return;
+    if (!swipe.on) {
+      const dx = e.clientX - swipe.x0, dy = e.clientY - swipe.y0;
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; } // vertical: not a swipe
+      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return;              // not decided yet
+      if (String(window.getSelection())) { swipe = null; return; }                    // extending a selection
+      swipe.on = true; swipe.x0 = e.clientX; // follow from here, so the page doesn't jump by the slop
+      stopTurn();
+      try { stage.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    }
+    let d = e.clientX - swipe.x0;
+    if ((page === 0 && d > 0) || (page >= pages - 1 && d < 0)) d *= 0.3; // nothing that way: resist
+    swipe.dx = d;
+    swipe.pts.push([e.timeStamp, e.clientX]);
+    if (swipe.pts.length > 5) swipe.pts.shift();
+    content.style.transform = `translateX(${stripX(page) + d}px)`;
+  });
+  const endSwipe = e => {
+    if (!swipe || e.pointerId !== swipe.id) return;
+    const s = swipe;
+    swipe = null;
+    if (!s.on) return;
+    swipedAt = Date.now();
+    const p0 = s.pts[0], p1 = s.pts[s.pts.length - 1];
+    const v = p0 && p1 && p1[0] > p0[0] ? (p1[1] - p0[1]) / (p1[0] - p0[0]) : 0; // px/ms over the last few moves
+    const w = viewport.clientWidth;
+    let dir = 0;
+    if (e.type !== 'pointercancel') {
+      if (s.dx < 0 && (s.dx < -w * 0.2 || v < -0.4)) dir = 1;       // dragged / flicked left: next page
+      else if (s.dx > 0 && (s.dx > w * 0.2 || v > 0.4)) dir = -1;   // right: previous page
+    }
+    const from = stripX(page) + s.dx, target = Math.max(0, Math.min(pages - 1, page + dir));
+    if (target !== page) setPage(target, false); // sets the final transform; the glide below runs on top
+    else content.style.transform = `translateX(${stripX(page)}px)`;
+    const dist = Math.abs(stripX(target) - from);
+    if (dist > 1 && !reduceMotion.matches)
+      content.animate([{ transform: `translateX(${from}px)` }, { transform: `translateX(${stripX(target)}px)` }],
+        { duration: Math.min(280, 90 + dist / 3), easing: 'cubic-bezier(.2,.7,.3,1)' });
+  };
+  stage.addEventListener('pointerup', endSwipe);
+  stage.addEventListener('pointercancel', endSwipe);
+
+  /* ---------------- auto-hiding bars (phones) ---------------- */
+  // body.autohide (from autoMQ) makes the toolbar and scrub bar float over the text; body.chrome-hidden
+  // slides them away. They hide when reading moves on (a page turn, scrolling down) and come back
+  // with a tap in the middle of the page or scrolling up. While anything that hangs off them is in
+  // use (Home, a drawer, a menu, search, a scrub drag, keyboard focus) they stay.
+  let chromeHidden = false, tapClosedSomething = false, hintTimer = 0;
+  const autoHiding = () => autoMQ.matches && !!doc;
+  const chromeNeeded = () => !doc || searchOpen() || $('#toc').classList.contains('open') || scrubDragging
+    || Object.values(panels).some(s => $(s).classList.contains('open'))
+    || !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#toolbar, #scrubbar') && document.activeElement.matches(':focus-visible'));
+  function setChrome(hidden) {
+    hidden = !!hidden && autoHiding() && !chromeNeeded();
+    if (hidden === chromeHidden) return;
+    chromeHidden = hidden;
+    document.body.classList.toggle('chrome-hidden', hidden);
+    if (hidden) firstHideHint(); else hideHint();
+  }
+  function syncAutoHide() {
+    document.body.classList.toggle('autohide', autoMQ.matches);
+    if (!autoHiding()) setChrome(false);
+  }
+  // The first time the bars hide, say how to get them back (once per browser).
+  function firstHideHint() {
+    try { if (localStorage.getItem('reflower.chromeHint')) return; localStorage.setItem('reflower.chromeHint', '1'); } catch { return; }
+    const h = $('#chromeHint');
+    h.classList.add('show'); h.setAttribute('aria-hidden', 'false');
+    hintTimer = setTimeout(hideHint, 4000);
+  }
+  function hideHint() { clearTimeout(hintTimer); $('#chromeHint').classList.remove('show'); $('#chromeHint').setAttribute('aria-hidden', 'true'); }
+  // A tap that closes a menu or drawer shouldn't also toggle the bars: note what was open before it.
+  document.addEventListener('pointerdown', () => {
+    tapClosedSomething = $('#toc').classList.contains('open') || Object.values(panels).some(s => $(s).classList.contains('open'));
+    hideHint();
+  }, true);
+  // Keyboard and screen-reader users: focus reaching a hidden bar (or Tab) brings it back.
+  document.addEventListener('focusin', e => { if (e.target.closest && e.target.closest('#toolbar, #scrubbar') && e.target.matches(':focus-visible')) setChrome(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Tab') setChrome(false); }, true);
+  autoMQ.addEventListener('change', () => { syncAutoHide(); scheduleRelayout(); });
 
   /* ---------------- drag & drop / paste ---------------- */
   let dragDepth = 0;
@@ -2262,9 +2508,10 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   });
 
   applySettings();
+  syncAutoHide();
   relayout(null);
   showRecent();
-  window.ReflowerApp = { loadText, setLayout, setView, setPage, resolveFonts, get fonts() { buildFontMenu(); return fontMenu; }, get state() { return { page, pages, view, layout: S.layout, doc, search: { q: SR.q, total: SR.total, shown: SR.hits.length, cur: SR.cur, done: SR.done } }; } };
+  window.ReflowerApp = { loadText, setLayout, setView, setPage, resolveFonts, get fonts() { buildFontMenu(); return fontMenu; }, get state() { return { page, pages, view, layout: S.layout, doc, chromeHidden, search: { q: SR.q, total: SR.total, shown: SR.hits.length, cur: SR.cur, done: SR.done } }; } };
 })();
 </script>
 </body>
