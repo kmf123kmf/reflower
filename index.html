@@ -60,6 +60,24 @@ body.paged #viewport { flex: 1; min-height: 0; overflow: hidden; }
 body.paged #pager { display: flex; flex: none; height: 32px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; user-select: none; }
 #pager button { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 0 10px; line-height: 1; }
 #pager button:hover { color: var(--fg); }
+/* scrub bar (Page / Spread): app chrome along the bottom of the window, not part of the page. A range
+   input over a layer of chapter ticks; the 14px thumb travels 7px in from each end, so ticks and the
+   tooltip use the same inset to line up with it. */
+#scrubbar { display: none; flex: none; height: 34px; padding: 0 16px; background: var(--ui); border-top: 1px solid var(--border); user-select: none; }
+body.paged #scrubbar { display: flex; align-items: center; }
+#scrub { position: relative; flex: 1; height: 100%; }
+#scrubRange { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 100%; margin: 0; background: transparent; cursor: pointer; --pct: 0%; }
+#scrubRange:focus { outline: none; }
+#scrubRange::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--pct), var(--border) var(--pct)); }
+#scrubRange::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--accent); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--accent); }
+#scrubRange::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
+#scrubRange::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+#scrubRange::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--accent); }
+#scrubRange:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+#scrubTicks { position: absolute; left: 7px; right: 7px; top: 50%; height: 0; pointer-events: none; }
+#scrubTicks i { position: absolute; top: -7px; width: 1px; height: 4px; background: var(--muted); opacity: .7; }
+#scrubTip { position: absolute; bottom: calc(50% + 12px); transform: translateX(-50%); display: none; padding: 3px 8px; border-radius: 4px; background: var(--fg); color: var(--paper); font-size: 12px; white-space: nowrap; pointer-events: none; z-index: 2; }
+#scrubTip.show { display: block; }
 body.spread #viewport::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid var(--border); opacity: .6; pointer-events: none; }
 
 /* ---------- drop hint ---------- */
@@ -152,8 +170,8 @@ body:not(.has-doc) #search { display: none; }
 #searchTab { position: absolute; right: 100%; top: 14px; width: 28px; padding: 14px 0; writing-mode: vertical-rl; font: inherit; letter-spacing: .08em; color: var(--muted); background: var(--ui); border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px; cursor: pointer; }
 #searchTab:hover, #search.open #searchTab { color: var(--fg); }
 #search .sbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-body.has-doc #stage { margin-right: 28px; } /* a strip for the tab, clear of the page and the scrollbar */
-@media (min-width: 860px) { body.has-doc.search-open #stage { margin-right: 368px; } } /* room to spare: dock beside the page */
+body.has-doc #stage, body.has-doc #scrubbar { margin-right: 28px; } /* a strip for the tab, clear of the page and the scrollbar */
+@media (min-width: 860px) { body.has-doc.search-open #stage, body.has-doc.search-open #scrubbar { margin-right: 368px; } } /* room to spare: dock beside the page */
 #search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
 #searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
 #searchInput:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -252,6 +270,8 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
     <div id="pager"><button id="pgPrev" title="Previous page">&#8249;</button><span id="pgLabel"></span><button id="pgNext" title="Next page">&#8250;</button></div>
   </div>
 </main>
+
+<footer id="scrubbar"><div id="scrub"><input type="range" id="scrubRange" min="0" max="0" step="1" value="0" aria-label="Page"><div id="scrubTicks"></div><div id="scrubTip"></div></div></footer>
 
 <div id="debugBox"></div>
 
@@ -1511,6 +1531,7 @@ const Reflow = (() => {
       stride = vw + GAP;
       const sent = $('#endSentinel');
       pages = sent ? Math.max(1, Math.floor((sent.getBoundingClientRect().left - content.getBoundingClientRect().left) / stride) + 1) : 1;
+      measureChapters();
       if (anchor) page = pageOfAnchor(anchor);
       restoring = true; setPage(page, false); restoring = false;
     } else if (anchor) {
@@ -1540,8 +1561,55 @@ const Reflow = (() => {
         { offset: 1, transform: x(page), opacity: 1 },
       ], { duration: 240 });
     }
+    updateScrub();
     updateIndicator();
   }
+
+  /* ---------------- scrub bar (Page / Spread) ---------------- */
+  // A slider over the whole book in the pager, with a tick where each chapter starts. Hover or drag
+  // shows "Page N of M · Chapter"; dragging turns pages live (no animation).
+  let chapters = []; // [{ page, label }] in reading order, measured on each paged relayout
+  const scrubRange = $('#scrubRange'), scrubTip = $('#scrubTip');
+  function measureChapters() { // call with the content untransformed (page 0 at the left)
+    const cl = content.getBoundingClientRect().left;
+    const plain = t => String(t).replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
+    chapters = (doc && doc.toc || []).filter(t => t.level > 0).map(t => {
+      const el = document.getElementById(t.id), r = el && el.getClientRects()[0];
+      return r && { page: Math.max(0, Math.min(pages - 1, Math.floor((r.left + 2 - cl) / stride))), label: plain(t.text) };
+    }).filter(Boolean);
+    scrubRange.max = Math.max(0, pages - 1);
+    $('#scrubTicks').innerHTML = pages > 1 ? chapters.map(c => `<i style="left:${(c.page / (pages - 1) * 100).toFixed(3)}%"></i>`).join('') : '';
+  }
+  function updateScrub() {
+    scrubRange.value = page;
+    scrubRange.style.setProperty('--pct', (pages > 1 ? page / (pages - 1) * 100 : 0) + '%');
+    if (scrubTip.classList.contains('show') && scrubDragging) showScrubTip(page);
+  }
+  function chapterOfPage(p) {
+    let lo = 0, hi = chapters.length - 1, r = null;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (chapters[mid].page <= p) { r = chapters[mid]; lo = mid + 1; } else hi = mid - 1; }
+    return r ? r.label : '';
+  }
+  function showScrubTip(p) {
+    const ch = chapterOfPage(p), w = scrubRange.clientWidth - 14;
+    scrubTip.textContent = `Page ${p + 1} of ${pages}` + (ch ? ' · ' + ch : '');
+    scrubTip.classList.add('show');
+    const x = 7 + (pages > 1 ? p / (pages - 1) : 0) * w, half = scrubTip.offsetWidth / 2; // kept inside the bar at the ends
+    scrubTip.style.left = Math.max(half, Math.min(scrubRange.clientWidth - half, x)) + 'px';
+  }
+  const pageAtX = x => { const r = scrubRange.getBoundingClientRect(); return Math.round(Math.max(0, Math.min(1, (x - r.left - 7) / Math.max(1, r.width - 14))) * Math.max(0, pages - 1)); };
+  let scrubDragging = false;
+  scrubRange.addEventListener('input', () => { setPage(+scrubRange.value, false); showScrubTip(page); });
+  scrubRange.addEventListener('pointerdown', () => { scrubDragging = true; });
+  scrubRange.addEventListener('pointermove', e => { if (!scrubDragging) showScrubTip(pageAtX(e.clientX)); });
+  scrubRange.addEventListener('pointerleave', () => { if (!scrubDragging) scrubTip.classList.remove('show'); });
+  window.addEventListener('pointerup', () => {
+    if (!scrubDragging) return;
+    scrubDragging = false;
+    scrubTip.classList.remove('show');
+    scrubRange.blur(); // hand the keyboard back to the reader's shortcuts
+  });
+  scrubRange.addEventListener('keyup', () => scrubTip.classList.remove('show'));
 
   let progTimer = 0;
   function updateIndicator() {

@@ -9,6 +9,7 @@
 <script>
 // Usage: /tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=2&view=reflow&debug=1&show=1
 // Headless: chrome --headless --screenshot=x.png --window-size=1400,900 <url>   or  --dump-dom to read #out
+// &scrub=<page> / &hover=<0..1> drive the pager's scrub bar.
 // &search=<text>[&next=N] types into the search panel and presses Enter N times. Add Chrome's
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
@@ -41,6 +42,12 @@ f.addEventListener('load', async () => {
     if (q.get('view')) app.setView(q.get('view'));
     if (q.get('page')) app.setPage(+q.get('page'), false);
     out.push(`final: ${JSON.stringify({ page: app.state.page, pages: app.state.pages, view: app.state.view, layout: app.state.layout })}`);
+    if (q.get('scrub') || q.get('hover')) { // the pager's scrub bar (Page / Spread): &scrub=<page> drags to it, &hover=<0..1> hovers
+      const d = w.document, r = d.getElementById('scrubRange'), tip = d.getElementById('scrubTip');
+      out.push(`scrub: max=${r.max} value=${r.value} ticks=${d.querySelectorAll('#scrubTicks i').length}`);
+      if (q.get('scrub')) { r.value = q.get('scrub'); r.dispatchEvent(new w.Event('input', { bubbles: true })); out.push(`scrubbed -> page ${app.state.page}; tip "${tip.textContent}"`); }
+      if (q.get('hover')) { const b = r.getBoundingClientRect(); r.dispatchEvent(new w.PointerEvent('pointermove', { clientX: b.left + 7 + +q.get('hover') * (b.width - 14), clientY: b.top + b.height / 2, bubbles: true })); out.push(`hover tip "${tip.textContent}" (page still ${app.state.page})`); }
+    }
     if (q.get('search')) { // type into the search panel like a reader, then press Enter (&next=N presses it N times)
       const d = w.document, inp = d.getElementById('searchInput');
       const paneBox = () => { const r = d.getElementById('pane').getBoundingClientRect(); return `${Math.round(r.left)}-${Math.round(r.right)}`; }, pane0 = paneBox();
