@@ -38,6 +38,8 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   (sizes the app's iframe). Every ui.html run prints a `fit @Npx` line flagging toolbar buttons or the
   page cut off sideways; `&click=btnSettings,btnTocTb` opens panels and reports whether they fit.
   The compact layout (CSS `@media (max-width: 700px)` + JS `compactMQ`) hides Spread/Raw/Debug.
+  Auto-hiding bars (`body.autohide` from JS `autoMQ`: compact width or a short touch screen) float the
+  toolbar/scrub bar over the text; `&chrome=1` taps through hide/show and checks page breaks don't move.
 - Use a fresh `--user-data-dir` per run (e.g. `"$TEMP/rf-$RANDOM"`) when testing edits: a reused
   profile can serve a cached `index.html` from the Python server.
 - Screenshots: `--window-size=1400,900 --screenshot=out.png "http://127.0.0.1:8765/tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=1&debug=1"`.

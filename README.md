@@ -59,9 +59,16 @@ text file is reflowed too.
   - in the paged layouts, whether chapters start on a new page.
 - **Page width:** on desktop, drag either edge of the page to change it.
 - **Export:** saves the reflowed text as `.txt` or as a standalone `.html` page.
-- **Phones:** the page uses the full screen width, and Contents and Search are in the toolbar.
-  Search opens as a sheet at the top with the text still visible below. Tap a result to jump
-  there, or double-tap it to also close the search.
+- **Phones:**
+  - The page uses the full screen width, and Contents and Search are in the toolbar.
+  - The toolbar and scrub bar hide while you read: on a page turn, or when you scroll down.
+    Tap the middle of the page, or scroll up, to bring them back. While they're hidden, a thin
+    line at the bottom shows your progress.
+  - Search opens as a sheet at the top with the text still visible below. Tap a result to jump
+    there, or double-tap it to also close the search.
+  - For the most reading space, use Safari's **Share → Add to Home Screen**. Reflower then opens
+    full screen, without Safari's own bars. On iPhone the home-screen copy keeps its own list of
+    recent files, separate from Safari's.
 
 ### Keyboard shortcuts (desktop)
 

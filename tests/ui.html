@@ -117,6 +117,31 @@ f.addEventListener('load', async () => {
       const row = d.querySelector('#searchList .hit.cur');
       out.push(`current row: ${row ? row.textContent : '(none)'}`);
     }
+    if (q.get('chrome')) { // &chrome=1: auto-hiding bars (phones). Taps as a reader would; page breaks must not move.
+      const d = w.document, st = d.getElementById('stage'), vp = d.getElementById('viewport');
+      const settle = async () => { await new Promise(r => setTimeout(r, 50)); d.getAnimations().forEach(a => a.finish()); };
+      const tap = async fx => { const r = vp.getBoundingClientRect(); d.dispatchEvent(new w.PointerEvent('pointerdown', { bubbles: true }));
+        st.dispatchEvent(new w.MouseEvent('click', { bubbles: true, clientX: r.left + fx * r.width, clientY: r.top + r.height / 2 })); await settle(); };
+      const bars = () => { const t = d.getElementById('toolbar').getBoundingClientRect(), s = d.getElementById('scrubbar').getBoundingClientRect();
+        return `${app.state.chromeHidden ? 'hidden' : 'shown'} (toolbar bottom ${Math.round(t.bottom)} opacity ${getComputedStyle(d.getElementById('toolbar')).opacity}, scrub top ${Math.round(s.top)}/${w.innerHeight})`; };
+      const geo = () => `${app.state.pages} pages, text ${Math.round(vp.getBoundingClientRect().height)}px tall`;
+      app.setLayout('page'); app.setPage(1, false); await settle();
+      out.push(`chrome: autohide ${d.body.classList.contains('autohide') ? 'on' : 'off'}; after the first page turn: bars ${bars()}; hint ${d.getElementById('chromeHint').classList.contains('show') ? 'shown' : 'not shown'}; ${geo()}`);
+      app.setPage(0, false); await tap(0.9); out.push(`tap right edge -> page ${app.state.page}; bars ${bars()}; ${geo()}; hint ${d.getElementById('chromeHint').classList.contains('show') ? 'still shown' : 'dismissed'}`);
+      await tap(0.5); out.push(`tap middle -> page ${app.state.page}; bars ${bars()}; ${geo()}`);
+      await tap(0.5); out.push(`tap middle again -> bars ${bars()}`);
+      d.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: 't', bubbles: true })); await settle();
+      out.push(`Contents (T) -> bars ${bars()}`);
+      await tap(0.5); out.push(`tap to close Contents -> drawer ${d.getElementById('toc').classList.contains('open') ? 'open' : 'closed'}, bars ${bars()}`);
+      app.setPage(app.state.page + 1); await settle(); out.push(`page turn -> bars ${bars()}`);
+      d.getElementById('btnSearchTb').click(); await settle(); out.push(`search opened -> bars ${bars()}`);
+      app.setPage(app.state.page + 1); await settle(); out.push(`page turn with search open -> bars ${bars()}`);
+      d.getElementById('searchClose').click(); await settle();
+      app.setLayout('scroll'); await settle();
+      st.scrollTop += 300; st.dispatchEvent(new w.Event('scroll')); await settle(); out.push(`scroll down 300 -> bars ${bars()}`);
+      st.scrollTop -= 100; st.dispatchEvent(new w.Event('scroll')); await settle(); out.push(`scroll up 100 -> bars ${bars()}`);
+      st.scrollTop += 10; st.dispatchEvent(new w.Event('scroll')); await settle(); out.push(`scroll down 10 -> bars ${bars()}`);
+    }
     if (q.get('click')) { // &click=id[,id…] clicks toolbar/panel controls in turn, then reports what is open
       const d = w.document;
       for (const id of q.get('click').split(',')) { d.getElementById(id).click(); await new Promise(r => setTimeout(r, 300)); }
