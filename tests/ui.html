@@ -43,12 +43,14 @@ f.addEventListener('load', async () => {
     out.push(`final: ${JSON.stringify({ page: app.state.page, pages: app.state.pages, view: app.state.view, layout: app.state.layout })}`);
     if (q.get('search')) { // type into the search panel like a reader, then press Enter (&next=N presses it N times)
       const d = w.document, inp = d.getElementById('searchInput');
+      const paneBox = () => { const r = d.getElementById('pane').getBoundingClientRect(); return `${Math.round(r.left)}-${Math.round(r.right)}`; }, pane0 = paneBox();
       d.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: '/', bubbles: true }));
       inp.value = q.get('search');
       inp.dispatchEvent(new w.Event('input', { bubbles: true }));
       const t0 = performance.now();
       for (let n = 0; n < 500 && !(app.state.search.q && app.state.search.done); n++) await new Promise(r => setTimeout(r, 20));
       const before = app.state.page;
+      out.push(`pane ${pane0} -> ${paneBox()} with the panel open (panel from ${Math.round(d.getElementById('search').getBoundingClientRect().left)})`);
       for (let n = +(q.get('next') || 1); n > 0; n--) inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       await new Promise(r => setTimeout(r, 400)); // let the page turn finish
       const s = app.state.search;
