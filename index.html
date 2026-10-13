@@ -1748,8 +1748,25 @@ const Reflow = (() => {
 
   // Page turns fade with a short drift in the direction of travel, rather than sliding the whole
   // column strip past (which, in Spread, also runs under the fixed spine and reads as a ribbon).
+  // Turns and swipe glides are stepped by hand (style per frame), not with element.animate(): an
+  // animated transform makes Chrome paint the whole column strip, i.e. the whole book, every frame
+  // (~400 ms a frame on a 350 KB file), where a plain style change repaints just the visible page.
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const stopTurn = () => content.getAnimations().forEach(a => a.cancel());
+  let turn = null; // the running motion: { raf, step } (step(1) is its final state)
+  function tween(ms, step) {
+    stopTurn();
+    const t0 = performance.now(), tick = now => {
+      const k = Math.min(1, (now - t0) / ms);
+      if (k < 1) turn.raf = requestAnimationFrame(tick); else turn = null;
+      step(k);
+    };
+    turn = { raf: requestAnimationFrame(tick), step };
+  }
+  function stopTurn() { // jump a running motion to its end (so rects measured next are final)
+    if (!turn) return;
+    const t = turn; turn = null;
+    cancelAnimationFrame(t.raf); t.step(1);
+  }
   function setPage(p, animate = true) {
     if (!isPaged()) return;
     if (!restoring) held = null;
@@ -1758,13 +1775,13 @@ const Reflow = (() => {
     stopTurn();
     content.style.transform = `translateX(${-page * stride}px)`;
     if (animate && page !== from && !reduceMotion.matches) {
-      const dir = Math.sign(page - from), x = n => `translateX(${-n * stride}px)`;
-      content.animate([
-        { offset: 0, transform: x(from), opacity: 1, easing: 'ease-in' },
-        { offset: 0.4, transform: `${x(from)} translateX(${-dir * 18}px)`, opacity: 0 },
-        { offset: 0.4, transform: `${x(page)} translateX(${dir * 18}px)`, opacity: 0, easing: 'ease-out' },
-        { offset: 1, transform: x(page), opacity: 1 },
-      ], { duration: 240 });
+      // fade out drifting in the direction of travel (ease-in), then the new page fades in (ease-out)
+      const dir = Math.sign(page - from), to = page, x = (n, d) => `translateX(${-n * stride + d}px)`;
+      tween(240, k => {
+        const out = k < 0.4, u = out ? k / 0.4 : (k - 0.4) / 0.6, e = out ? u * u : 1 - (1 - u) * (1 - u);
+        content.style.transform = out ? x(from, -dir * 18 * e) : x(to, dir * 18 * (1 - e));
+        content.style.opacity = k < 1 ? (out ? 1 - e : e) : '';
+      });
     }
     if (page !== from && !restoring) setChrome(true); // reading on: phones tuck the bars away
     updateScrub();
@@ -2440,12 +2457,11 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
       else if (s.dx > 0 && (s.dx > w * 0.2 || v > 0.4)) dir = -1;   // right: previous page
     }
     const from = stripX(page) + s.dx, target = Math.max(0, Math.min(pages - 1, page + dir));
-    if (target !== page) setPage(target, false); // sets the final transform; the glide below runs on top
+    if (target !== page) setPage(target, false); // sets the final transform; the glide below starts from the finger
     else content.style.transform = `translateX(${stripX(page)}px)`;
-    const dist = Math.abs(stripX(target) - from);
-    if (dist > 1 && !reduceMotion.matches)
-      content.animate([{ transform: `translateX(${from}px)` }, { transform: `translateX(${stripX(target)}px)` }],
-        { duration: Math.min(280, 90 + dist / 3), easing: 'cubic-bezier(.2,.7,.3,1)' });
+    const end = stripX(target), dist = Math.abs(end - from);
+    if (dist > 1 && !reduceMotion.matches) // ease-out cubic (a quick start that settles)
+      tween(Math.min(280, 90 + dist / 3), k => { content.style.transform = `translateX(${from + (end - from) * (1 - (1 - k) ** 3)}px)`; });
   };
   stage.addEventListener('pointerup', endSwipe);
   stage.addEventListener('pointercancel', endSwipe);
