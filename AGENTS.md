@@ -40,6 +40,8 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   The compact layout (CSS `@media (max-width: 700px)` + JS `compactMQ`) hides Spread/Raw/Debug.
   Auto-hiding bars (`body.autohide` from JS `autoMQ`: compact width or a short touch screen) float the
   toolbar/scrub bar over the text; `&chrome=1` taps through hide/show and checks page breaks don't move.
+  `&swipe=1` drives synthetic touch drags (follow, spring back, flick, edge margin, vertical);
+  `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry).
 - Use a fresh `--user-data-dir` per run (e.g. `"$TEMP/rf-$RANDOM"`) when testing edits: a reused
   profile can serve a cached `index.html` from the Python server.
 - Screenshots: `--window-size=1400,900 --screenshot=out.png "http://127.0.0.1:8765/tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=1&debug=1"`.

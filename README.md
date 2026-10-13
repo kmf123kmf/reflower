@@ -49,7 +49,10 @@ text file is reflowed too.
   - **Page:** one page at a time.
   - **Spread:** two facing pages, on wide screens.
 - **Turning pages:** use the arrow keys, Page Up/Down, Space, the mouse wheel, tapping or clicking
-  the page edges, or the scrub bar along the bottom.
+  the page edges, or the scrub bar along the bottom. On touch screens you can also swipe: the page
+  follows your finger. Swipes that start right at the screen's edge are left to the browser's own
+  back/forward gesture.
+- **Back button:** Back (or Safari's edge swipe) returns from a book to Home, and Forward reopens it.
 - **Contents:** a list of the detected chapters.
 - **Search:** finds every match with its chapter. "Back to where I was" returns you to your place.
 - **Settings (Aa):**

@@ -76,7 +76,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #viewport { position: relative; }
 #pager { display: none; }
 
-body.paged #stage { overflow: hidden; }
+body.paged #stage { overflow: hidden; touch-action: pan-y; } /* sideways drags are ours (swipe to turn); vertical stays the browser's */
 body.paged #pane { height: calc(100% - 32px); min-height: 0; display: flex; flex-direction: column; padding: 40px 56px 8px; }
 body.paged #viewport { flex: 1; min-height: 0; overflow: hidden; }
 body.paged #pager { display: flex; flex: none; height: 32px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; user-select: none; }
@@ -1445,12 +1445,12 @@ const Reflow = (() => {
   }
 
   // `src` is the file as decoded (RTF still raw): Recent keeps it, and its hash keys the saved position.
-  function openSource(src, name) {
+  function openSource(src, name, fromHistory = false) {
     const key = hashText(src);
     if (/\.rtf$/i.test(name) || /^\s*\{\\rtf/.test(src.slice(0, 32))) {
       const r = Reflow.fromRTF(src);
-      loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF' });
-    } else loadText(src, name, { key });
+      loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF', fromHistory });
+    } else loadText(src, name, { key, fromHistory });
     Recent.add({ key, name, src, title: doc.metaTitle || doc.res.stats.title || '' });
   }
 
@@ -1464,8 +1464,29 @@ const Reflow = (() => {
     const a = savedAnchor();
     if (a) { relayout(a); held = a; }
     syncAutoHide(); setChrome(false); // a newly opened book starts with the bars showing
+    if (!extra.fromHistory) history.pushState({ book: doc.key }, ''); // so Back returns Home (see "history")
     stage.focus();
   }
+
+  /* ---------------- history ---------------- */
+  // Each opened book gets a history entry (no URL change), so the browser's Back, including Safari's
+  // edge swipe, returns to Home instead of leaving the site, and Forward reopens the book from Recent.
+  // Home in the app goes Back too, keeping the two in step.
+  function leaveBook() {
+    if (!doc) return;
+    if (history.state && history.state.book) history.back(); else goHome();
+  }
+  window.addEventListener('popstate', async e => {
+    const key = e.state && e.state.book;
+    if (!key) { if (doc) goHome(); return; }
+    if (doc && doc.key === key) return;
+    let r = null;
+    try { r = await Recent.get(key); } catch { /* no IndexedDB */ }
+    if (r) openSource(r.src, r.name, true);
+    else { history.replaceState(null, ''); if (doc) goHome(); } // not kept (too big, private window): Home
+  });
+  // A reload keeps history.state, but nothing reopens automatically: start from Home.
+  if (history.state && history.state.book) history.replaceState(null, '');
 
   function hashText(t) { // FNV-1a plus length, so collisions are vanishingly rare
     let h = 0x811c9dc5;
@@ -2039,7 +2060,7 @@ const Reflow = (() => {
   document.querySelectorAll('#viewSeg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
   $('#btnDebug').addEventListener('click', () => { const a = holdAnchor(); debug = !debug; applySettings(); relayout(a); });
   $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
-  $('#btnHome').addEventListener('click', goHome);
+  $('#btnHome').addEventListener('click', leaveBook);
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
   $('#tocTab').addEventListener('click', () => toggleToc());
   // compact toolbar stand-ins for the drawer tabs (stopPropagation: the document click handler closes the drawer)
@@ -2322,7 +2343,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     const k = e.key;
     if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); toggleToc(false); closeSearch(); return; }
     if (k === 'o' || k === 'O') { $('#fileInput').click(); return; }
-    if (k === 'h' || k === 'H') { goHome(); return; }
+    if (k === 'h' || k === 'H') { leaveBook(); return; }
     if (!doc) return;
     if (k === 't' || k === 'T') { toggleToc(); return; }
     if (k === '/') { e.preventDefault(); openSearch(); return; }
@@ -2358,7 +2379,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   // background on either side, so clicking anywhere left or right of the text turns the page.
   // The middle (or, in Scroll, anywhere) shows / hides the bars on phones.
   stage.addEventListener('click', e => {
-    if (String(window.getSelection()) || tapClosedSomething) return;
+    if (String(window.getSelection()) || tapClosedSomething || Date.now() - swipedAt < 350) return; // a swipe's lift isn't a tap
     if (e.target.closest('button, a, summary, input, select, .handle, #pager')) return;
     if (isPaged()) {
       const r = viewport.getBoundingClientRect(), zone = r.width * 0.25;
@@ -2369,6 +2390,63 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   });
   $('#pgPrev').addEventListener('click', () => setPage(page - 1));
   $('#pgNext').addEventListener('click', () => setPage(page + 1));
+
+  /* ---------------- swipe to turn pages (touch, Page / Spread) ---------------- */
+  // The column strip follows the finger (the neighbouring page slides in beside it); let go past a
+  // fifth of the width, or with a flick, to turn, otherwise it springs back. Touches starting within
+  // SWIPE_EDGE px of the screen's sides are left alone: Safari's back/forward and Android's back
+  // gestures live there and can't be overridden. Vertical moves, pinches and text selection don't swipe.
+  const SWIPE_EDGE = 24;
+  let swipe = null, swipedAt = 0;
+  const stripX = n => -n * stride;
+  stage.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' || !e.isPrimary || !isPaged()) return;
+    if (e.clientX < SWIPE_EDGE || e.clientX > window.innerWidth - SWIPE_EDGE) return;
+    if (e.target.closest('button, a, summary, input, select, #pager')) return;
+    swipe = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, on: false, pts: [] };
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!swipe || e.pointerId !== swipe.id) return;
+    if (!swipe.on) {
+      const dx = e.clientX - swipe.x0, dy = e.clientY - swipe.y0;
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; } // vertical: not a swipe
+      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return;              // not decided yet
+      if (String(window.getSelection())) { swipe = null; return; }                    // extending a selection
+      swipe.on = true; swipe.x0 = e.clientX; // follow from here, so the page doesn't jump by the slop
+      stopTurn();
+      try { stage.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    }
+    let d = e.clientX - swipe.x0;
+    if ((page === 0 && d > 0) || (page >= pages - 1 && d < 0)) d *= 0.3; // nothing that way: resist
+    swipe.dx = d;
+    swipe.pts.push([e.timeStamp, e.clientX]);
+    if (swipe.pts.length > 5) swipe.pts.shift();
+    content.style.transform = `translateX(${stripX(page) + d}px)`;
+  });
+  const endSwipe = e => {
+    if (!swipe || e.pointerId !== swipe.id) return;
+    const s = swipe;
+    swipe = null;
+    if (!s.on) return;
+    swipedAt = Date.now();
+    const p0 = s.pts[0], p1 = s.pts[s.pts.length - 1];
+    const v = p0 && p1 && p1[0] > p0[0] ? (p1[1] - p0[1]) / (p1[0] - p0[0]) : 0; // px/ms over the last few moves
+    const w = viewport.clientWidth;
+    let dir = 0;
+    if (e.type !== 'pointercancel') {
+      if (s.dx < 0 && (s.dx < -w * 0.2 || v < -0.4)) dir = 1;       // dragged / flicked left: next page
+      else if (s.dx > 0 && (s.dx > w * 0.2 || v > 0.4)) dir = -1;   // right: previous page
+    }
+    const from = stripX(page) + s.dx, target = Math.max(0, Math.min(pages - 1, page + dir));
+    if (target !== page) setPage(target, false); // sets the final transform; the glide below runs on top
+    else content.style.transform = `translateX(${stripX(page)}px)`;
+    const dist = Math.abs(stripX(target) - from);
+    if (dist > 1 && !reduceMotion.matches)
+      content.animate([{ transform: `translateX(${from}px)` }, { transform: `translateX(${stripX(target)}px)` }],
+        { duration: Math.min(280, 90 + dist / 3), easing: 'cubic-bezier(.2,.7,.3,1)' });
+  };
+  stage.addEventListener('pointerup', endSwipe);
+  stage.addEventListener('pointercancel', endSwipe);
 
   /* ---------------- auto-hiding bars (phones) ---------------- */
   // body.autohide (from autoMQ) makes the toolbar and scrub bar float over the text; body.chrome-hidden
