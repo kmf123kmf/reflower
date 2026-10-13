@@ -299,6 +299,46 @@ samples["wordpad_wrapped.rtf"] = wp
 expect["wordpad_wrapped.rtf"] = {"width": 70, "wrapped": True, "headings": 1, "paras": len(P),
                                  "contains": ["Pennywhistle from the doorway"]}
 
+# 15. Centred notices inside the story are not chapter headings: one with a lower-case line under it
+# (the only chapter is "Chapter 1", so that line is what gives it away) ...
+W = 72
+NOTICE = [center("WOULD MARGARET HALE PLEASE REPORT", W), center("TO THE HARBOUR MASTER'S OFFICE", W)]
+o = ["Chapter 1", ""]
+blank_separated(W, P[:5], o)
+o += NOTICE + [center("(the loudspeaker)", W), ""]
+blank_separated(W, P[5:], o)
+samples["notice_72.txt"] = o
+expect["notice_72.txt"] = {"width": 72, "wrapped": True, "headings": 1, "centers": 1, "paras": len(P)}
+
+# ... and one in capitals alone, in a book whose chapters are numbered
+o = []
+for k, chunk in enumerate([P[:5], P[5:10], P[10:]]):
+    o += [f"Chapter {k + 1}", ""]
+    blank_separated(W, chunk[:2], o)
+    if k == 1:
+        o += NOTICE + [""]
+    blank_separated(W, chunk[2:], o)
+samples["notice_chapters_72.txt"] = o
+expect["notice_chapters_72.txt"] = {"width": 72, "wrapped": True, "headings": 3, "centers": 1, "paras": len(P)}
+
+# 16. A serial joined from separately posted parts (Usenet style): a centred header per part with
+# "(PART TWO)" in it, "END PART ONE" over a rule, the next part's file name, indented paragraphs,
+# and a one-line paragraph whose margins happen to come out even (not centred text)
+W = 79
+RULE = " " * 7 + "=" * 65
+o = [center("THE LAST VOYAGE", W), center("(PART ONE)", W), center("By Eleanor Finch", W), ""]
+for k, chunk in enumerate([P[:6], P[6:12], P[12:]]):
+    if k:
+        o += ["", "", center(f"LV-0{k + 1}.TXT", W), "",
+              center("THE LAST VOYAGE", W), center(f"(PART {['ONE', 'TWO', 'THREE'][k]})", W), center("By Eleanor Finch", W), ""]
+    for p in chunk:
+        o += wrap(p, W, first="     ") + [""]
+    if k == 1:
+        o += ["     " + "The gulls wheeled over the harbour and the bell rang out once more.", ""]
+    o += [center(f"END PART {['ONE', 'TWO'][k]}" if k < 2 else "THE END???", W), RULE, ""]
+samples["serial_79.txt"] = o
+expect["serial_79.txt"] = {"width": 79, "wrapped": True, "title": True, "headings": 2, "centers": 5, "paras": len(P) + 1}
+
 os.makedirs(OUT, exist_ok=True)
 for name, lines in samples.items():
     with open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\r\n") as f:

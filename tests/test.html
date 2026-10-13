@@ -61,6 +61,7 @@
       if ('doubleSpaced' in ex) chk('doubleSpaced', st.doubleSpaced === ex.doubleSpaced, st.doubleSpaced);
       if ('flowed' in ex) chk('flowed', st.flowed === ex.flowed, st.flowed);
       if ('headings' in ex) chk('headings', (c.heading || 0) === ex.headings, c.heading || 0);
+      if ('centers' in ex) chk('centers', (c.center || 0) === ex.centers, c.center || 0);
       if ('breaks' in ex) chk('breaks', (c.break || 0) === ex.breaks, c.break || 0);
       if ('title' in ex) chk('title', !!c.title === ex.title, !!c.title);
       if ('meta' in ex) chk('meta', !!c.meta === ex.meta, !!c.meta);

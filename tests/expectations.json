@@ -104,5 +104,27 @@
     "contains": [
       "Pennywhistle from the doorway"
     ]
+  },
+  "notice_72.txt": {
+    "width": 72,
+    "wrapped": true,
+    "headings": 1,
+    "centers": 1,
+    "paras": 17
+  },
+  "notice_chapters_72.txt": {
+    "width": 72,
+    "wrapped": true,
+    "headings": 3,
+    "centers": 1,
+    "paras": 17
+  },
+  "serial_79.txt": {
+    "width": 79,
+    "wrapped": true,
+    "title": true,
+    "headings": 2,
+    "centers": 5,
+    "paras": 18
   }
 }

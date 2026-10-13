@@ -381,6 +381,7 @@ const Reflow = (() => {
   const CHAPTER_RE = new RegExp(`^(?:chapter|chap\\.|ch\\.|part|book|volume|vol\\.|section|act|scene|canto|episode|letter)(?:\\s+|(?<=\\.)\\s*)${NUM}(?:[\\s-]+${NUM})*(?=$|[\\s.:\\-—–)])[.:)]?\\s*(?:[-—–:|]\\s*)?(.*)$`, 'i');
   const PART_RE = /^(?:part|book|volume|vol\.|act)\b/i;
   const NAMED_RE = /^(?:prologue|epilogue|interlude|intermission|afterword|foreword|preface|introduction|dedication|acknowledg(?:e)?ments|contents|table of contents|author'?s note|appendix(?:\s+[a-z0-9]+)?|glossary|postscript|coda|the end|fin|finis)(?=$|[\s.:\-—–])[.:]?\s*(?:[-—–:|]\s*)?(.*)$/i;
+  const END_RE = /^(?:the\s+)?end(?:\s+of)?(?:\s+(?:part|chapter|book|volume|section|story)\b.*)?[\s.!?]*$/i;
   const NUMERAL_RE = /^[\[(~\-#*=\s.]*(?:\d{1,3}|[IVXLCDM]{1,7})[\])~\-#*=\s.:]*$/;
   const OOO_RE = /^[\s\-~=*]*(?:o\s*O\s*o|O\s*o\s*O|x\s*X\s*x|X\s*x\s*X)[\s\-~=*]*$/;
   const LIST_RE = /^(?:[-*+•–]\s+\S|\(?\d{1,3}[.)]\s+\S|\(?[a-z][.)]\s+\S)/;
@@ -438,8 +439,11 @@ const Reflow = (() => {
     return !sig.length || sig.filter(cap).length / sig.length >= 0.75;
   }
 
-  function isCentered(l, W) {
+  // paraIndent: the usual first-line indent. A line starting there and running most of the way across
+  // is a one-line paragraph, however evenly its margins happen to come out.
+  function isCentered(l, W, paraIndent = 0) {
     if (!W) return l.indent >= 6 && l.text.length < 60;
+    if (paraIndent && Math.abs(l.indent - paraIndent) <= 1 && l.len >= W * 0.8) return false;
     return l.indent >= 3 && l.len < W - 4 && Math.abs(l.indent - (W - l.len)) <= Math.max(3, Math.round(W * 0.08));
   }
 
@@ -572,12 +576,38 @@ const Reflow = (() => {
       else if (rest.length) h.sub += ' — ' + rest.join(' — ');
       return h;
     }
-    if (/^["“‘'(]/.test(t0)) return null;
+    // From here on it is layout alone (decoration, capitals, centring): `weak`, see demoteStrayHeadings.
+    // A line starting in lower case ("(the PA system)") reads as text, not a title.
+    if (/^["“‘'(]/.test(t0) || content.some(l => /^[^\p{L}\p{N}]*\p{Ll}/u.test(l.text))) return null;
+    // Nor do end markers ("END PART ONE", "THE END???") or file names ("SSY-02.TXT", left by joining parts).
+    if (END_RE.test(t0) || /^[\w-]+\.[a-z\d]{2,4}$/i.test(t0)) return null;
     const label = t0, sub = rest.join(' — ');
-    if (decorated && content.length === 1) return { label, sub, level: 2 };
-    if (content.every(l => allCaps(l.text)) && content.every(l => noEnd(l.text)) && !/[!?]$/.test(t0)) return { label, sub, level: 2 };
-    if (ctx.wrapped && content.every(l => isCentered(l, W)) && content.every(l => noEnd(l.text))) return { label, sub, level: 2 };
+    if (decorated && content.length === 1) return { label, sub, level: 2, weak: true };
+    if (content.every(l => allCaps(l.text)) && content.every(l => noEnd(l.text)) && !/[!?]$/.test(t0)) return { label, sub, level: 2, weak: true };
+    if (ctx.wrapped && content.every(l => isCentered(l, W, ctx.paraIndent)) && content.every(l => noEnd(l.text))) return { label, sub, level: 2, weak: true };
     return null;
+  }
+
+  // A heading found by layout alone is a guess. Where the chapters are found by name or number
+  // ("Chapter 3", "IV") and such guesses are the odd one out, they are more likely a sign, a notice
+  // or an announcement in the story: shown centred, kept out of the contents.
+  function demoteStrayHeadings(items) {
+    const hs = items.filter(it => it.type === 'heading'), weak = hs.filter(it => it.weak).length;
+    if (!weak || hs.length - weak < 3 * weak) return;
+    for (let k = items.length - 1; k >= 0; k--) {
+      const it = items[k];
+      if (it.type !== 'heading' || !it.weak) continue;
+      items.splice(k, 1, { type: 'center', lines: it.lines }, ...(it.subLines.length ? [{ type: 'center', lines: it.subLines }] : []));
+    }
+  }
+
+  // A serial's header for each part: a centred block (title, "(PART TWO)", byline, address) with one
+  // part or chapter line in it, which becomes the heading.
+  function partHeader(b, ctx) {
+    if (!ctx.wrapped || b.lines.length < 2 || b.lines.length > 5 || !b.lines.every(l => isCentered(l, ctx.W, ctx.paraIndent))) return null;
+    const hits = b.lines.map(l => l.text.replace(/^[(\[]\s*|\s*[)\]]$/g, '')).filter(t => t.length <= 40 && CHAPTER_RE.test(t));
+    if (hits.length !== 1) return null;
+    return { type: 'heading', label: hits[0], sub: '', level: PART_RE.test(hits[0]) ? 1 : 2, lines: b.lines, subLines: [] };
   }
 
   function isSubtitleBlock(b, ctx) {
@@ -585,7 +615,7 @@ const Reflow = (() => {
     const ts = b.lines.map(l => l.text);
     if (ts.some(t => t.length > 60 || /[.,;:]$/.test(t) || /^["“‘'(]/.test(t) || isBreakLine(t) || /^(?:[IVXLCDM]+|\d+)[.)]\s/.test(t))) return false;
     if (matchHeading(ts[0])) return false;
-    return ts.every(t => titleCase(t) || allCaps(t) || /^[_*].*[_*]$/.test(t)) || b.lines.every(l => isCentered(l, ctx.W));
+    return ts.every(t => titleCase(t) || allCaps(t) || /^[_*].*[_*]$/.test(t)) || b.lines.every(l => isCentered(l, ctx.W, ctx.paraIndent));
   }
 
   function isTitleBlock(b) {
@@ -602,13 +632,14 @@ const Reflow = (() => {
     if (isMetaBlock(b)) return 'meta';
     if (FRONT_RE.test(ts[0])) return 'byline';
     if (ts.every(t => t.length <= 50 && !/[.,;:!?]$/.test(t)) &&
-        b.lines.every(l => allCaps(l.text) || titleCase(l.text) || isCentered(l, ctx.W))) return 'byline';
+        b.lines.every(l => allCaps(l.text) || titleCase(l.text) || isCentered(l, ctx.W, ctx.paraIndent))) return 'byline';
     return null;
   }
 
   function isPreBlock(b, W) {
-    const L = b.lines;
-    if (L.length < 2) return false;
+    if (b.lines.length < 2) return false;
+    const L = b.lines.filter(l => !isRuleLike(l.text)); // a rule under a line is decoration, not a table
+    if (!L.length) return false;
     let hits = 0;
     for (const l of L) {
       const t = l.text, dense = t.replace(/\s/g, '').length || 1;
@@ -748,6 +779,7 @@ const Reflow = (() => {
     const contLines = [];
     blocks.forEach(b => { if (b.lines.length >= 3) b.lines.slice(1).forEach(l => contLines.push(l.indent)); });
     ctx.bodyIndent = mode(contLines, 0);
+    ctx.paraIndent = mode(blocks.filter(b => b.lines.length >= 2 && b.lines[0].indent > ctx.bodyIndent).map(b => b.lines[0].indent), 0);
     stats.blankSeparated = ctx.blankSeparated; stats.flowed = ctx.flowed;
 
     // Pass 3: block classification (front matter, headings, breaks, preformatted, prose)
@@ -783,6 +815,8 @@ const Reflow = (() => {
         items.push(it);
         continue;
       }
+      const ph = partHeader(b, ctx);
+      if (ph) { items.push(ph); continue; }
       const h = headingOf(b, ctx);
       if (h && !(h.numeral && b.lines.length > 1)) {
         const it = { type: 'heading', ...h, lines: [...b.lines], subLines: [] };
@@ -813,6 +847,7 @@ const Reflow = (() => {
       });
       flush();
     }
+    demoteStrayHeadings(items);
     stats.passes.push('classified blocks');
 
     // Pass 4: sections (split at headings) with local width estimates
@@ -946,7 +981,7 @@ const Reflow = (() => {
           break;
         case 'prose': {
           const sec = secs[it.sec], Ws = sec.W, n = L.length;
-          if (it.whole && sec.wrapped && n <= 6 && L.every(l => isCentered(l, Ws))) {
+          if (it.whole && sec.wrapped && n <= 6 && L.every(l => isCentered(l, Ws, ctx.paraIndent))) {
             recordDecs(L, 'center');
             nodes.push({ type: 'center', lines: L.map(l => tidy(l.text)), src: src(L) });
             break;
@@ -957,7 +992,7 @@ const Reflow = (() => {
               nodes.push(verseNode(L));
               break;
             }
-            if (sec.wrapped && L.every(l => l.indent >= ctx.bodyIndent + 2) && L.some(l => l.dec && l.dec.join) && !L.every(l => isCentered(l, Ws))) {
+            if (sec.wrapped && L.every(l => l.indent >= ctx.bodyIndent + 2) && L.some(l => l.dec && l.dec.join) && !L.every(l => isCentered(l, Ws, ctx.paraIndent))) {
               recordDecs(L, 'quote');
               nodes.push({ type: 'quote', paras: buildParas(L), src: src(L) });
               break;
