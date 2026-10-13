@@ -219,11 +219,7 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
 <div class="panel" id="settings">
   <h4>Reading</h4>
   <label>Theme <select id="setTheme"><option value="light">Light</option><option value="sepia">Sepia</option><option value="dark">Dark</option></select></label>
-  <label>Font <select id="setFont">
-    <optgroup label="Serif"><option value="serif">Constantia</option><option value="modern">Sitka Text</option><option value="book">Palatino</option></optgroup>
-    <optgroup label="Sans-serif"><option value="sans">Segoe UI</option><option value="candara">Candara</option><option value="corbel">Corbel</option>
-      <option value="calibri">Calibri</option><option value="verdana">Verdana</option><option value="trebuchet">Trebuchet</option><option value="noto">Noto Sans</option></optgroup>
-    <optgroup label="Other"><option value="mono">Monospace</option></optgroup></select></label>
+  <label>Font <select id="setFont"></select></label>
   <label>Size <input type="range" id="setSize" min="13" max="30" step="1"></label>
   <label>Line height <input type="range" id="setLh" min="1.2" max="2.2" step="0.05"></label>
   <label>Alignment <select id="setAlign"><option value="left">Left</option><option value="justify">Justified</option></select></label>
@@ -1198,20 +1194,81 @@ const Reflow = (() => {
   }
   const toggleToc = on => $('#toc').classList.toggle('open', on);
   const stage = $('#stage'), pane = $('#pane'), viewport = $('#viewport'), content = $('#content');
-  const FONTS = {
-    serif: 'Constantia, "Iowan Old Style", "Palatino Linotype", Georgia, serif',
-    book: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
-    modern: '"Sitka Text", Constantia, "Iowan Old Style", Georgia, serif',
-    sans: '"Segoe UI", system-ui, -apple-system, Roboto, sans-serif',
-    candara: 'Candara, "Gill Sans", Optima, "Segoe UI", sans-serif',
-    corbel: 'Corbel, "Lucida Grande", "Segoe UI", sans-serif',
-    calibri: 'Calibri, Carlito, "Helvetica Neue", "Segoe UI", sans-serif',
-    verdana: 'Verdana, "DejaVu Sans", Geneva, sans-serif',
-    trebuchet: '"Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif',
-    noto: '"Noto Sans", "Open Sans", "Segoe UI", sans-serif',
-    mono: 'Consolas, "Cascadia Mono", Menlo, monospace',
-  };
-  const DEFAULTS = { progress: 'loc', theme: 'light', font: 'candara', fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
+  // Reading fonts. Each choice tries its faces in order and uses (and is named after) the first one
+  // installed, so the same menu suits Windows, macOS and Linux. A choice that finds none of its faces
+  // is left out unless it has an `always` label (a generic family), and so is one that lands on a face
+  // an earlier choice already uses. Choice ids are what settings store, so they never change.
+  const FONT_CHOICES = [
+    { id: 'serif', group: 'Serif', faces: ['Constantia', 'Iowan Old Style', 'Noto Serif', 'Georgia'], generic: 'serif', always: 'Serif' },
+    { id: 'modern', group: 'Serif', faces: ['Sitka Text', 'Charter', 'DejaVu Serif', 'Liberation Serif'], generic: 'serif' },
+    { id: 'book', group: 'Serif', faces: ['Palatino Linotype', 'Palatino', 'Book Antiqua', 'TeX Gyre Pagella', 'P052', 'URW Palladio L'], generic: 'serif' },
+    { id: 'sans', group: 'Sans-serif', faces: ['Segoe UI'], generic: 'system-ui, sans-serif', always: 'System UI' },
+    { id: 'candara', group: 'Sans-serif', faces: ['Candara', 'Gill Sans'], generic: 'sans-serif' },
+    { id: 'corbel', group: 'Sans-serif', faces: ['Corbel', 'Avenir Next', 'Lucida Grande'], generic: 'sans-serif' },
+    { id: 'calibri', group: 'Sans-serif', faces: ['Calibri', 'Carlito', 'Helvetica Neue'], generic: 'sans-serif' },
+    { id: 'verdana', group: 'Sans-serif', faces: ['Verdana', 'DejaVu Sans'], generic: 'sans-serif' },
+    { id: 'trebuchet', group: 'Sans-serif', faces: ['Trebuchet MS'], generic: 'sans-serif' },
+    { id: 'noto', group: 'Sans-serif', faces: ['Noto Sans', 'Open Sans'], generic: 'sans-serif' },
+    { id: 'mono', group: 'Other', faces: ['Consolas', 'Cascadia Mono', 'Menlo', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Liberation Mono'], generic: 'monospace', always: 'Monospace' },
+  ];
+  const DEFAULT_FONTS = ['candara', 'serif']; // first one available here (Candara on Windows, Gill Sans on macOS, a serif on Linux)
+
+  // Is a font installed? Text set in it measures differently from the generic fallbacks. The first
+  // lookup of each name costs a few ms, so answers are kept in localStorage: startup only asks about
+  // the font in use (from the cache, normally), and the whole list is re-checked in idle time.
+  const fontInstalled = (() => {
+    const KEY = 'reflower.fonts', PROBE = 'mmmmmmmmmmlli1WQ@#&';
+    let known = {}, ctx = null, base = null;
+    try { known = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* storage unavailable */ }
+    const width = f => { ctx.font = `72px ${f}`; return ctx.measureText(PROBE).width; };
+    const measure = face => {
+      if (!ctx) { ctx = document.createElement('canvas').getContext('2d'); base = ['monospace', 'serif', 'sans-serif'].map(g => [g, width(g)]); }
+      return (known[face] = base.some(([g, w]) => width(`"${face}", ${g}`) !== w));
+    };
+    const installed = face => (face in known ? known[face] : measure(face));
+    installed.remeasure = measure;
+    installed.save = () => { try { localStorage.setItem(KEY, JSON.stringify(known)); } catch { /* quota: skip */ } };
+    return installed;
+  })();
+
+  // A choice as it resolves here, or null if it finds none of its faces (and has no `always`).
+  function resolveFont(c, installed = fontInstalled) {
+    const face = c.faces.find(installed);
+    return face || c.always ? { id: c.id, group: c.group, label: face || c.always, stack: (face ? `"${face}", ` : '') + c.generic } : null;
+  }
+  function resolveFonts(installed = fontInstalled) { // the menu: each face once, first choice to reach it keeps it
+    const used = new Set();
+    return FONT_CHOICES.map(c => resolveFont(c, installed)).filter(f => f && !used.has(f.label) && used.add(f.label));
+  }
+  // The font in use: the saved choice if it resolves here, else the first available default.
+  const fontOf = id => [id, ...DEFAULT_FONTS].map(k => FONT_CHOICES.find(c => c.id === k)).filter(Boolean).map(c => resolveFont(c)).find(Boolean)
+    || resolveFont(FONT_CHOICES[0]);
+
+  // The Font menu is built once the whole list has been checked (in idle time, a few faces per slice),
+  // or straight away if Settings opens first. If a face turns out to have changed since the cache
+  // was written, the font in use is re-applied.
+  let fontMenu = null;
+  const fontQueue = [...new Set(FONT_CHOICES.flatMap(c => c.faces))];
+  function buildFontMenu() {
+    if (fontMenu) return;
+    const before = fontOf(S.font).stack;
+    while (fontQueue.length) fontInstalled.remeasure(fontQueue.shift());
+    fontInstalled.save();
+    fontMenu = resolveFonts();
+    $('#setFont').innerHTML = ['Serif', 'Sans-serif', 'Other'].map(g => {
+      const fs = fontMenu.filter(f => f.group === g);
+      return fs.length ? `<optgroup label="${g}">${fs.map(f => `<option value="${f.id}">${escHTML(f.label)}</option>`).join('')}</optgroup>` : '';
+    }).join('');
+    if (fontOf(S.font).stack !== before && doc) { const a = holdAnchor(); applySettings(); relayout(a); } else applySettings();
+  }
+  const whenIdle = window.requestIdleCallback || (cb => setTimeout(() => cb({ timeRemaining: () => 8 }), 200));
+  whenIdle(function checkFonts(dl) {
+    if (fontMenu) return;
+    while (fontQueue.length && dl.timeRemaining() > 4) fontInstalled.remeasure(fontQueue.shift());
+    if (fontQueue.length) whenIdle(checkFonts); else buildFontMenu();
+  });
+
+  const DEFAULTS = { progress: 'loc', theme: 'light', font: null, fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
   const S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('reflower.settings') || '{}'));
   S.widths = Object.assign({}, DEFAULTS.widths, S.widths);
   const save = () => localStorage.setItem('reflower.settings', JSON.stringify(S));
@@ -1230,14 +1287,14 @@ const Reflow = (() => {
   function applySettings() {
     const root = document.documentElement;
     root.dataset.theme = S.theme;
-    root.style.setProperty('--font', FONTS[S.font] || FONTS.serif);
+    root.style.setProperty('--font', fontOf(S.font).stack);
     root.style.setProperty('--fs', S.fs + 'px');
     root.style.setProperty('--lh', S.lh);
     content.classList.toggle('justify', S.align === 'justify');
     content.classList.toggle('indent', S.para === 'indent');
     document.body.classList.toggle('chapter-breaks', !!S.chapterBreaks);
     document.body.classList.toggle('has-doc', !!doc);
-    $('#setTheme').value = S.theme; $('#setFont').value = S.font; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
+    $('#setTheme').value = S.theme; if (fontMenu) $('#setFont').value = (fontMenu.find(f => f.label === fontOf(S.font).label) || {}).id || ''; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
     $('#setAlign').value = S.align; $('#setPara').value = S.para; $('#setSmart').checked = S.smart; $('#setChapter').checked = S.chapterBreaks;
     // Raw always scrolls: show that, and lock the layout buttons (the saved layout is kept for Reflowed)
     const rawLock = !!doc && view === 'raw';
@@ -1871,6 +1928,7 @@ const Reflow = (() => {
   const panels = { btnSettings: '#settings', btnExport: '#exportMenu' };
   Object.entries(panels).forEach(([btn, sel]) => $('#' + btn).addEventListener('click', e => {
     e.stopPropagation();
+    if (sel === '#settings') buildFontMenu();
     Object.values(panels).forEach(s => { if (s !== sel) $(s).classList.remove('open'); });
     $(sel).classList.toggle('open');
   }));
@@ -2090,7 +2148,7 @@ const Reflow = (() => {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  const exportCSS = () => `body{background:#f4f1ea;margin:0;color:#2b2a27}article{max-width:38em;margin:2em auto;padding:3em 3.5em;background:#fffdf8;font:${S.fs}px/${S.lh} ${FONTS[S.font] || FONTS.serif};box-shadow:0 2px 18px rgba(0,0,0,.08)}
+  const exportCSS = () => `body{background:#f4f1ea;margin:0;color:#2b2a27}article{max-width:38em;margin:2em auto;padding:3em 3.5em;background:#fffdf8;font:${S.fs}px/${S.lh} ${fontOf(S.font).stack};box-shadow:0 2px 18px rgba(0,0,0,.08)}
 p{margin:0 0 .85em}.doc-title{text-align:center;margin-bottom:1.6em}.doc-title h1{font-weight:normal;font-size:2em;margin:0 0 .25em}.subtitle{font-style:italic;margin:0}
 .byline{text-align:center;font-style:italic;margin-bottom:1.4em}.meta{font-size:.85em;color:#8a857b;border-left:3px solid #ddd;padding-left:.8em;margin-bottom:1.2em}
 h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 .sub{display:block;font-size:.72em;font-style:italic;margin-top:.35em}
@@ -2176,7 +2234,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   applySettings();
   relayout(null);
   showRecent();
-  window.ReflowerApp = { loadText, setLayout, setView, setPage, get state() { return { page, pages, view, layout: S.layout, doc, search: { q: SR.q, total: SR.total, shown: SR.hits.length, cur: SR.cur, done: SR.done } }; } };
+  window.ReflowerApp = { loadText, setLayout, setView, setPage, resolveFonts, get fonts() { buildFontMenu(); return fontMenu; }, get state() { return { page, pages, view, layout: S.layout, doc, search: { q: SR.q, total: SR.total, shown: SR.hits.length, cur: SR.cur, done: SR.done } }; } };
 })();
 </script>
 </body>

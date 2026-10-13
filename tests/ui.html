@@ -9,7 +9,7 @@
 <script>
 // Usage: /tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=2&view=reflow&debug=1&show=1
 // Headless: chrome --headless --screenshot=x.png --window-size=1400,900 <url>   or  --dump-dom to read #out
-// &toc=<n> clicks the nth Contents entry. &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
+// &fonts=1 lists the font menu (here and simulated macOS / Linux). &toc=<n> clicks the nth Contents entry. &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
 // &search=<text>[&next=N] types into the search panel and presses Enter N times. Add Chrome's
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
@@ -42,6 +42,18 @@ f.addEventListener('load', async () => {
     if (q.get('view')) app.setView(q.get('view'));
     if (q.get('page')) app.setPage(+q.get('page'), false);
     out.push(`final: ${JSON.stringify({ page: app.state.page, pages: app.state.pages, view: app.state.view, layout: app.state.layout })}`);
+    if (q.get('fonts')) { // the font menu here, and as it would be with typical macOS / Linux fonts
+      const menu = fs => fs.map(f => `${f.id}=${f.label}`).join(', ');
+      out.push(`fonts here: ${menu(app.fonts)}; in use: ${getComputedStyle(w.document.documentElement).getPropertyValue('--font')}`);
+      const sim = { macOS: 'Iowan Old Style,Charter,Palatino,Georgia,Gill Sans,Avenir Next,Lucida Grande,Helvetica Neue,Verdana,Trebuchet MS,Menlo,Geneva',
+        'Ubuntu': 'Noto Serif,Noto Sans,Noto Sans Mono,DejaVu Serif,DejaVu Sans,DejaVu Sans Mono,Liberation Serif,Liberation Sans,Liberation Mono,P052,Ubuntu',
+        'Fedora + LibreOffice': 'Noto Serif,Noto Sans,Noto Sans Mono,DejaVu Sans,Liberation Serif,Carlito,Cantarell' };
+      for (const [os, list] of Object.entries(sim)) { const has = new Set(list.split(',')); out.push(`fonts ${os}: ${menu(app.resolveFonts(f => has.has(f)))}`); }
+      const sel = w.document.getElementById('setFont'), pick = [...sel.options].find(o => o.value !== sel.value);
+      out.push(`menu: ${[...sel.options].map(o => o.textContent).join(' | ')}; selected ${sel.value}`);
+      sel.value = pick.value; sel.dispatchEvent(new w.Event('input', { bubbles: true }));
+      out.push(`picked ${pick.textContent} -> --font ${getComputedStyle(w.document.documentElement).getPropertyValue('--font')}`);
+    }
     if (q.get('toc')) { // click the Nth Contents entry
       const d = w.document, link = d.querySelectorAll('#tocList a')[+q.get('toc')];
       link.click(); await new Promise(r => setTimeout(r, 400));

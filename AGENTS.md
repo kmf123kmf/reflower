@@ -19,7 +19,8 @@ Search (`/` or the Search button) is a literal, case-insensitive find over the r
 - `tests/test.html` – engine test page (extracts the engine from `index.html`).
 - `tests/ui.html` – UI smoke test / screenshot harness (loads the app in an iframe and opens the
   sample through a simulated file drop, so `.rtf` samples work too). `&search=<text>&next=N` drives
-  the search panel, `&scrub=<value>&hover=<0..1>` the bottom scrub bar; run it with `--force-prefers-reduced-motion` (see the note in the file).
+  the search panel, `&scrub=<value>&hover=<0..1>` the bottom scrub bar, `&toc=<n>` the Contents, `&fonts=1` lists the
+  font menu here and as it would be on typical macOS / Linux font sets; run it with `--force-prefers-reduced-motion` (see the note in the file).
 - `tests/bench.html` – performance benchmark (needs `samples/real/pg1342.txt`).
 - `samples/real/` – optional real Project Gutenberg files for manual checks (not generated).
 
