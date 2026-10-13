@@ -45,7 +45,8 @@ f.addEventListener('load', async () => {
     if (q.get('scrub') || q.get('hover')) { // the pager's scrub bar (Page / Spread): &scrub=<page> drags to it, &hover=<0..1> hovers
       const d = w.document, r = d.getElementById('scrubRange'), tip = d.getElementById('scrubTip');
       out.push(`scrub: max=${r.max} value=${r.value} ticks=${d.querySelectorAll('#scrubTicks i').length}`);
-      if (q.get('scrub')) { r.value = q.get('scrub'); r.dispatchEvent(new w.Event('input', { bubbles: true })); out.push(`scrubbed -> page ${app.state.page}; tip "${tip.textContent}"`); }
+      if (q.get('scrub')) { r.value = q.get('scrub'); r.dispatchEvent(new w.Event('input', { bubbles: true })); out.push(`scrubbed -> page ${app.state.page}; tip "${tip.textContent}"`);
+        await new Promise(res => setTimeout(res, 400)); out.push(`footer "${d.getElementById('pgLabel').textContent}"`); }
       if (q.get('hover')) { const b = r.getBoundingClientRect(); r.dispatchEvent(new w.PointerEvent('pointermove', { clientX: b.left + 7 + +q.get('hover') * (b.width - 14), clientY: b.top + b.height / 2, bubbles: true })); out.push(`hover tip "${tip.textContent}" (page still ${app.state.page})`); }
     }
     if (q.get('search')) { // type into the search panel like a reader, then press Enter (&next=N presses it N times)
