@@ -1212,6 +1212,8 @@ const Reflow = (() => {
   let page = 0, pages = 1, stride = 1;
 
   const isPaged = () => !!doc && view === 'reflow' && S.layout !== 'scroll';
+  // The layout actually in use: Raw always scrolls (with Scroll's width), whatever is saved for Reflowed.
+  const layoutNow = () => (doc && view === 'raw' ? 'scroll' : S.layout);
 
   /* ---------------- settings ---------------- */
   function applySettings() {
@@ -1226,7 +1228,10 @@ const Reflow = (() => {
     document.body.classList.toggle('has-doc', !!doc);
     $('#setTheme').value = S.theme; $('#setFont').value = S.font; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
     $('#setAlign').value = S.align; $('#setPara').value = S.para; $('#setSmart').checked = S.smart; $('#setChapter').checked = S.chapterBreaks;
-    document.querySelectorAll('#layoutSeg button').forEach(b => b.classList.toggle('on', b.dataset.layout === S.layout));
+    // Raw always scrolls: show that, and lock the layout buttons (the saved layout is kept for Reflowed)
+    const rawLock = !!doc && view === 'raw';
+    document.querySelectorAll('#layoutSeg button').forEach(b => { b.classList.toggle('on', b.dataset.layout === layoutNow()); b.disabled = rawLock; });
+    $('#layoutSeg').title = rawLock ? 'Raw view always scrolls' : 'Layout (1 / 2 / 3)';
     document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
     $('#btnDebug').classList.toggle('on', debug);
     document.body.classList.toggle('debug', debug);
@@ -1514,7 +1519,7 @@ const Reflow = (() => {
     document.documentElement.style.setProperty('--tb-h', $('#toolbar').offsetHeight + 'px'); // drawers sit below it, even when it wraps
     document.body.classList.toggle('paged', paged);
     document.body.classList.toggle('spread', paged && S.layout === 'spread');
-    const w = Math.min(S.widths[S.layout] || 760, window.innerWidth - 24);
+    const w = Math.min(S.widths[layoutNow()] || 760, window.innerWidth - 24);
     document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
     // With the search panel docked, the stage ends at the panel (so its scrollbar stays usable), but
     // the page keeps the place it had without the panel, moving left only as far as it must to clear it.
@@ -1815,7 +1820,7 @@ const Reflow = (() => {
       h.classList.add('active');
       const move = ev => {
         const w = startW + (ev.clientX - startX) * 2 * (side === 'r' ? 1 : -1);
-        S.widths[S.layout] = Math.round(Math.max(320, Math.min(window.innerWidth - 24, w)));
+        S.widths[layoutNow()] = Math.round(Math.max(320, Math.min(window.innerWidth - 24, w)));
         scheduleRelayout(anchor);
       };
       const up = () => { h.classList.remove('active'); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); save(); };
@@ -1826,6 +1831,7 @@ const Reflow = (() => {
 
   /* ---------------- toolbar ---------------- */
   function setLayout(l) {
+    if (doc && view === 'raw') return; // locked: Raw always scrolls
     const a = holdAnchor();
     S.layout = l; save(); applySettings(); relayout(a);
   }
