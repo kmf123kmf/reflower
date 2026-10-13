@@ -22,8 +22,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* ---------- toolbar ---------- */
 #toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
 #toolbar .spacer { flex: 1; }
-#toolbar button, .panel button, .panel select { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
-#toolbar button:hover, .panel button:hover { background: var(--paper); }
+#toolbar button, .panel button, .panel select, #search .sbar button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
+#toolbar button:hover, .panel button:hover, #search .sbar button:hover { background: var(--paper); }
 #toolbar button.on { background: var(--accent); border-color: var(--accent); color: var(--paper); }
 #toolbar button:disabled { opacity: .4; cursor: default; }
 .seg { display: inline-flex; }
@@ -46,6 +46,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 
 /* ---------- stage / pane ---------- */
 #stage { flex: 1; min-height: 0; position: relative; overflow-y: auto; overflow-anchor: none; outline: none; }
+/* theme-coloured scrollbars, normal width so the thumb is easy to grab (the stage's is hidden while reading) */
+#stage, #searchList, #toc { scrollbar-color: color-mix(in srgb, var(--muted) 60%, transparent) transparent; }
 #pane { position: relative; width: min(var(--pane-w), calc(100% - 24px)); margin: 16px auto; background: var(--paper); box-shadow: var(--shadow); border-radius: 4px; padding: 48px 56px 56px; min-height: calc(100% - 32px); }
 .handle { position: absolute; top: 0; bottom: 0; width: 14px; cursor: ew-resize; z-index: 5; touch-action: none; }
 .handle.l { left: -7px; } .handle.r { right: -7px; }
@@ -177,8 +179,6 @@ body.has-doc #stage, body.has-doc #scrubbar { margin-right: 28px; } /* a strip f
 #search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
 #searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
 #searchInput:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-#search .sbar button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
-#search .sbar button:hover { background: var(--paper); }
 #search .sstatus { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 24px; padding: 0 12px 6px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 #searchBack { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; white-space: nowrap; }
 #searchBack:hover { text-decoration: underline; }
@@ -188,8 +188,6 @@ body.has-doc #stage, body.has-doc #scrubbar { margin-right: 28px; } /* a strip f
 #searchList .hit.cur { background: var(--paper); box-shadow: inset 3px 0 var(--accent); }
 #searchList .hit b { color: var(--accent); }
 #searchList .where { display: block; margin-top: 2px; font: 11px/1.3 "Segoe UI", system-ui, sans-serif; color: var(--muted); }
-/* ---------- scrollbars: theme-coloured (normal width, so the thumb is easy to grab) ---------- */
-#stage, #searchList, #toc { scrollbar-color: color-mix(in srgb, var(--muted) 60%, transparent) transparent; }
 
 ::highlight(search) { background-color: rgba(255, 196, 0, .4); }
 ::highlight(search-cur) { background-color: #ff9632; color: #000; }
@@ -1063,7 +1061,7 @@ const Reflow = (() => {
       if (pg.brk) { blankBefore(); lines.push(''); continue; }
       const text = pg.text.replace(/[ \t]+$/gm, '');
       if (!text.trim()) { blankBefore(); continue; }
-      const plain = text.replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '').trim();
+      const plain = stripMarkers(text).trim();
       const sname = styles[pg.style] || '';
       const short = plain.length <= 80 && !plain.includes('\n');
       const looksHeading = short && !/[.,;:]$/.test(plain) && (allCaps(plain) || !!matchHeading(plain) || pg.bold);
@@ -1092,6 +1090,9 @@ const Reflow = (() => {
       .replace(/([\p{L}\p{N}])'(?=[\p{L}\p{N}])/gu, '$1’')
       .replace(/(^|[\s(\[{—–\-“])'(?=\S)/gu, '$1‘').replace(/'/g, '’');
   }
+
+  // The inverse of the **bold** / _italic_ convention fromRTF() writes (for labels shown as plain text).
+  const stripMarkers = s => String(s ?? '').replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
 
   function emphasize(s) {
     return s
@@ -1177,7 +1178,7 @@ const Reflow = (() => {
     return new RegExp(src, 'giu');
   }
 
-  return { analyze, fromRTF, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading, searchFold, searchPattern };
+  return { analyze, fromRTF, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading, stripMarkers, searchFold, searchPattern };
 })();
 </script>
 
@@ -1188,6 +1189,14 @@ const Reflow = (() => {
 (() => {
   'use strict';
   const $ = s => document.querySelector(s);
+  const escHTML = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // Index of the last of n ascending items whose key is <= x, or -1.
+  function lastAtOrBefore(n, keyAt, x) {
+    let lo = 0, hi = n - 1, r = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (keyAt(mid) <= x) { r = mid; lo = mid + 1; } else hi = mid - 1; }
+    return r;
+  }
+  const toggleToc = on => $('#toc').classList.toggle('open', on);
   const stage = $('#stage'), pane = $('#pane'), viewport = $('#viewport'), content = $('#content');
   const FONTS = {
     serif: 'Constantia, "Iowan Old Style", "Palatino Linotype", Georgia, serif',
@@ -1207,7 +1216,7 @@ const Reflow = (() => {
   S.widths = Object.assign({}, DEFAULTS.widths, S.widths);
   const save = () => localStorage.setItem('reflower.settings', JSON.stringify(S));
 
-  let doc = null;           // { name, text, res, html, toc }
+  let doc = null; // the open file: name, text, key, hints… (loadText); res, srcOff, range, chapters (analyze); blocks, toc (render)
   let view = 'reflow';
   let debug = false;
   let widthOverride = null;
@@ -1323,13 +1332,7 @@ const Reflow = (() => {
     const p = loadPositions()[doc.key];
     if (!p) return null;
     if (p.src != null) return anchorAtSrc(p.src);
-    let el = null; // positions saved before `src` existed
-    if (view === 'raw') el = content.querySelector(`[data-l="${p.line}"]`);
-    else for (const c of content.children) {
-      if (c.dataset.s == null) continue;
-      if (+c.dataset.s <= p.line && +c.dataset.e >= p.line) { el = c; break; }
-      if (+c.dataset.s > p.line) { el = c; break; }
-    }
+    const el = blockAtLine(p.line); // positions saved before `src` existed
     if (!el) return null;
     let caret = null;
     const startLine = el.dataset.l != null ? +el.dataset.l : +el.dataset.s;
@@ -1383,19 +1386,17 @@ const Reflow = (() => {
     let items = [];
     try { items = await Recent.list(); } catch { /* no IndexedDB */ }
     if (!items.length) { box.innerHTML = ''; return; }
-    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const pos = loadPositions();
     const ago = t => { const m = (Date.now() - t) / 6e4; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
     // The file name is what the reader knows the file by, so it always leads, in full; a detected
     // title (which can be a guess, or stale RTF metadata) is only shown under it, and only if different.
-    const plain = t => String(t || '').replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '').replace(/\s+/g, ' ').trim();
     const key = t => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
     const same = (name, t) => key(name.replace(/\.[a-z0-9]{1,4}$/i, '')) === key(t);
     box.innerHTML = '<h4>Continue reading</h4>' + items.map(r => {
-      const p = pos[r.key], title = plain(r.title), sub = title && !same(r.name, title) ? `<span class="title">${esc(title)}</span>` : '';
-      return `<div class="item"><button class="open" data-key="${esc(r.key)}" title="Reopen ${esc(r.name)}"><span class="label"><span class="name">${esc(r.name)}</span>${sub}</span>`
+      const p = pos[r.key], title = Reflow.stripMarkers(r.title).replace(/\s+/g, ' ').trim(), sub = title && !same(r.name, title) ? `<span class="title">${escHTML(title)}</span>` : '';
+      return `<div class="item"><button class="open" data-key="${escHTML(r.key)}" title="Reopen ${escHTML(r.name)}"><span class="label"><span class="name">${escHTML(r.name)}</span>${sub}</span>`
         + `<span class="when">${p ? Math.floor(p.pct * 100) + '% · ' : ''}${ago(p ? Math.max(p.t, r.t) : r.t)}</span></button>`
-        + `<button class="forget" data-key="${esc(r.key)}" title="Forget this file">✕</button></div>`;
+        + `<button class="forget" data-key="${escHTML(r.key)}" title="Forget this file">✕</button></div>`;
     }).join('') + '<button class="forgetAll">Forget all recent files</button>';
   }
   content.addEventListener('click', async e => {
@@ -1423,20 +1424,25 @@ const Reflow = (() => {
     lines.forEach((l, i) => { off[i + 1] = off[i] + l.raw.length + 1; });
     const body = doc.res.nodes.filter(nd => !nd.boiler);
     doc.range = body.length ? [off[body[0].src[0]], off[body[body.length - 1].src[1] + 1]] : [0, off[lines.length]];
+    // Chapters (headings outside folded boilerplate), for the search results and the scrub bar.
+    doc.chapters = body.filter(nd => nd.type === 'heading').map(nd => ({ line: nd.src[0], label: Reflow.stripMarkers(nd.label) }));
+  }
+  function chapterAtLine(line) {
+    const C = doc.chapters, k = lastAtOrBefore(C.length, j => C[j].line, line);
+    return k < 0 ? '' : C[k].label;
   }
 
   /* ---------------- rendering ---------------- */
   function render(anchor) {
     if (!doc) return;
-    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     if (view === 'raw') {
       const { lines, info } = doc.res;
       content.className = 'raw';
       content.innerHTML = lines.map((l, i) => {
         const x = info[i];
         const glyph = x.join === 'soft' ? `↩ ${x.score}` : x.join === 'para' ? `¶ ${x.score}` : x.join === 'br' ? `↵ ${x.score}` : '';
-        const tip = x.reasons ? ` title="${esc(x.kind + ' | ' + x.join + ' (' + x.score + ') W=' + x.W + '\n' + x.reasons.join('\n'))}"` : ` title="${x.kind}"`;
-        return `<div class="rl j-${x.join || 'none'}" data-l="${i}" data-kind="${x.kind}"${tip}><span class="ln">${i + 1}</span><span class="rt">${esc(l.raw) || ' '}</span><span class="rd">${glyph}</span></div>`;
+        const tip = x.reasons ? ` title="${escHTML(x.kind + ' | ' + x.join + ' (' + x.score + ') W=' + x.W + '\n' + x.reasons.join('\n'))}"` : ` title="${x.kind}"`;
+        return `<div class="rl j-${x.join || 'none'}" data-l="${i}" data-kind="${x.kind}"${tip}><span class="ln">${i + 1}</span><span class="rt">${escHTML(l.raw) || ' '}</span><span class="rd">${glyph}</span></div>`;
       }).join('') + '<div id="endSentinel"></div>';
     } else {
       const { html, toc } = Reflow.toHTML(doc.res.nodes, { smart: S.smart });
@@ -1469,7 +1475,7 @@ const Reflow = (() => {
     $('#docname').textContent = '';
     document.title = HOME_TITLE;
     $('#tocList').innerHTML = '<div class="empty">No document loaded</div>';
-    $('#toc').classList.remove('open');
+    toggleToc(false);
     renderDebug(); applySettings(); relayout(null);
     stage.scrollTop = 0;
     updateIndicator();
@@ -1478,12 +1484,11 @@ const Reflow = (() => {
 
   function renderToc() {
     const list = $('#tocList');
-    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
     if (!doc || !doc.toc || !doc.toc.length) { list.innerHTML = '<div class="empty">No headings detected</div>'; return; }
     const minL = Math.min(...doc.toc.filter(t => t.level > 0).map(t => t.level), 2);
     list.innerHTML = doc.toc.map(t => {
       const lvl = t.level === 0 ? 0 : t.level - minL + 1;
-      return `<a href="#${t.id}" class="l${lvl}" data-id="${t.id}">${esc(t.text)}${t.sub ? ` <small>${esc(t.sub)}</small>` : ''}</a>`;
+      return `<a href="#${t.id}" class="l${lvl}" data-id="${t.id}">${escHTML(t.text)}${t.sub ? ` <small>${escHTML(t.sub)}</small>` : ''}</a>`;
     }).join('');
   }
 
@@ -1541,7 +1546,7 @@ const Reflow = (() => {
       if (anchor) page = pageOfAnchor(anchor);
       restoring = true; setPage(page, false); restoring = false;
     } else if (anchor) {
-      restoreScrollAnchor(anchor);
+      revealRect(anchorRect(anchor));
     }
     ownScrollTop = stage.scrollTop;
     measureChapters(); updateScrub();
@@ -1578,28 +1583,23 @@ const Reflow = (() => {
   // stands in for the hidden scrollbar). Hover or drag shows the progress readout plus the chapter;
   // dragging moves the text live (no page-turn animation).
   const SCROLL_STEPS = 1000; // range resolution in Scroll (pages are the steps in Page / Spread)
-  let chapters = []; // [{ pos, label }] in reading order, measured on each relayout
+  let marks = []; // doc.chapters placed on the bar: [{ pos, label }], measured on each relayout
   const scrubRange = $('#scrubRange'), scrubTip = $('#scrubTip');
   const posMax = () => (isPaged() ? Math.max(0, pages - 1) : Math.max(0, stage.scrollHeight - stage.clientHeight));
   const posNow = () => (isPaged() ? page : stage.scrollTop);
   const posFrac = x => { const m = posMax(); return m ? Math.max(0, Math.min(1, x / m)) : 0; };
   const anchorAtPos = x => (isPaged() ? anchorAtPage(x) : anchorAtScroll(x));
   function measureChapters() {
-    chapters = [];
+    marks = [];
     if (doc && doc.blocks) {
-      const paged = isPaged(), cl = content.getBoundingClientRect().left, max = posMax();
-      const top = stage.getBoundingClientRect().top - stage.scrollTop + READ_Y; // scrollTop 0's reading line
-      const plain = t => String(t).replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
-      doc.res.nodes.forEach((nd, i) => {
-        if (nd.type !== 'heading' || nd.boiler) return;
-        const el = view === 'raw' ? content.querySelector(`.rl[data-l="${nd.src[0]}"]`) : document.getElementById('n' + i);
-        const r = el && el.getClientRects()[0];
-        if (!r) return;
-        const pos = paged ? Math.floor((r.left + 2 - cl) / stride) : r.top - top; // its page / the scrollTop bringing it to the reading line
-        chapters.push({ pos: Math.max(0, Math.min(max, pos)), label: plain(nd.label) });
-      });
+      const paged = isPaged(), max = posMax();
+      const top = stage.getBoundingClientRect().top - stage.scrollTop + READ_Y; // the reading line at scrollTop 0
+      for (const c of doc.chapters) {
+        const el = blockAtLine(c.line), r = el && el.getClientRects()[0];
+        if (r) marks.push({ pos: Math.min(max, paged ? pageOfRect(r) : Math.max(0, r.top - top)), label: c.label }); // its page / the scrollTop bringing it to the reading line
+      }
     }
-    $('#scrubTicks').innerHTML = posMax() ? chapters.map(c => `<i style="left:${(posFrac(c.pos) * 100).toFixed(3)}%"></i>`).join('') : '';
+    $('#scrubTicks').innerHTML = posMax() ? marks.map(c => `<i style="left:${(posFrac(c.pos) * 100).toFixed(3)}%"></i>`).join('') : '';
   }
   function updateScrub() {
     if (!doc) return;
@@ -1608,11 +1608,7 @@ const Reflow = (() => {
     if (!scrubDragging) scrubRange.value = isPaged() ? x : Math.round(posFrac(x) * SCROLL_STEPS);
     scrubRange.style.setProperty('--pct', posFrac(x) * 100 + '%');
   }
-  function chapterAt(x) {
-    let lo = 0, hi = chapters.length - 1, r = null;
-    while (lo <= hi) { const mid = (lo + hi) >> 1; if (chapters[mid].pos <= x + 1) { r = chapters[mid]; lo = mid + 1; } else hi = mid - 1; }
-    return r ? r.label : '';
-  }
+  function chapterAt(x) { const k = lastAtOrBefore(marks.length, j => marks[j].pos, x + 1); return k < 0 ? '' : marks[k].label; }
   function showScrubTip(x) {
     const a = anchorAtPos(x), ch = chapterAt(x), atEnd = isPaged() ? x >= pages - 1 : x >= posMax() - 1;
     scrubTip.textContent = (a ? progressText(progressAt(a.src, atEnd), x) : '') + (ch ? ' · ' + ch : '');
@@ -1709,8 +1705,7 @@ const Reflow = (() => {
   function anchorAtSrc(pos) {
     const B = doc.blocks, off = doc.srcOff;
     if (!B || !B.length) return null;
-    let lo = 0, hi = B.length - 1; // last block starting at or before pos
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (off[blockSpan(B[mid])[0]] <= pos) lo = mid; else hi = mid - 1; }
+    const lo = Math.max(0, lastAtOrBefore(B.length, j => off[blockSpan(B[j])[0]], pos)); // last block starting at or before pos
     let el = B[lo], [s, e] = blockSpan(el);
     if (pos >= off[e + 1] && lo + 1 < B.length) { el = B[lo + 1]; [s, e] = blockSpan(el); pos = off[s]; } // in a gap: next block
     const frac = Math.max(0, Math.min(1, (pos - off[s]) / Math.max(1, off[e + 1] - off[s])));
@@ -1718,6 +1713,12 @@ const Reflow = (() => {
     let n, left = Math.round(frac * root.textContent.length), caret = null;
     while ((n = it.nextNode())) { if (left < n.length) { caret = { node: n, offset: left }; break; } left -= n.length; }
     return { caret, line: s, el, src: pos };
+  }
+  function blockAtLine(line) { // the block holding source line `line`, else the next one
+    const B = doc.blocks;
+    if (!B || !B.length) return null;
+    const k = lastAtOrBefore(B.length, j => blockSpan(B[j])[0], line);
+    return k >= 0 && blockSpan(B[k])[1] < line && k + 1 < B.length ? B[k + 1] : B[Math.max(0, k)];
   }
 
   // An anchor remembers the reading position as a DOM caret plus a source-line fallback,
@@ -1793,28 +1794,17 @@ const Reflow = (() => {
         if (rect) return rect;
       } catch { /* fall through */ }
     }
-    if (a.el && a.el.isConnected) return a.el.getClientRects()[0];
-    let target = null;
-    if (view === 'raw') target = content.querySelector(`[data-l="${a.line}"]`);
-    else for (const c of content.children) { if (c.dataset.s != null && +c.dataset.s <= a.line && +c.dataset.e >= a.line) { target = c; break; } if (c.dataset.s != null && +c.dataset.s > a.line) { target = c; break; } }
-    return target ? target.getClientRects()[0] : null;
+    const el = a.el && a.el.isConnected ? a.el : blockAtLine(a.line);
+    return el ? el.getClientRects()[0] : null;
   }
 
-  function pageOfAnchor(a) {
-    const r = anchorRect(a);
-    if (!r) return page;
-    return Math.max(0, Math.min(pages - 1, Math.floor((r.left + 2 - content.getBoundingClientRect().left) / stride)));
-  }
-
-  function restoreScrollAnchor(a) {
-    const r = anchorRect(a);
-    if (r) stage.scrollTop += r.top - stage.getBoundingClientRect().top - READ_Y;
-  }
-
-  function goToElement(el) {
-    if (!el) return;
-    if (isPaged()) setPage(Math.floor((el.getClientRects()[0].left + 2 - content.getBoundingClientRect().left) / stride));
-    else stage.scrollTop += el.getBoundingClientRect().top - stage.getBoundingClientRect().top - READ_Y;
+  const pageOfRect = r => Math.max(0, Math.min(pages - 1, Math.floor((r.left + 2 - content.getBoundingClientRect().left) / stride)));
+  function pageOfAnchor(a) { const r = anchorRect(a); return r ? pageOfRect(r) : page; }
+  // Bring a rect into view: turn to its page, or scroll it to y px below the top edge.
+  function revealRect(r, y = READ_Y) {
+    if (!r) return;
+    if (isPaged()) setPage(pageOfRect(r));
+    else stage.scrollTop += r.top - stage.getBoundingClientRect().top - y;
   }
 
   let rafId = 0, pendingAnchor = null;
@@ -1867,14 +1857,15 @@ const Reflow = (() => {
   $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
   $('#btnHome').addEventListener('click', goHome);
   $('#fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
-  $('#btnToc').addEventListener('click', () => $('#toc').classList.toggle('open'));
+  $('#btnToc').addEventListener('click', () => toggleToc());
   $('#tocList').addEventListener('click', e => {
     const a = e.target.closest('a');
     if (!a) return;
     e.preventDefault();
     if (view !== 'reflow') setView('reflow');
-    goToElement(document.getElementById(a.dataset.id));
-    $('#toc').classList.remove('open');
+    const el = document.getElementById(a.dataset.id);
+    revealRect(el && el.getClientRects()[0]);
+    toggleToc(false);
   });
 
   const panels = { btnSettings: '#settings', btnExport: '#exportMenu' };
@@ -1885,7 +1876,7 @@ const Reflow = (() => {
   }));
   document.addEventListener('click', e => {
     Object.values(panels).forEach(s => { if (!e.target.closest(s)) $(s).classList.remove('open'); });
-    if (!e.target.closest('#toc') && !e.target.closest('#btnToc')) $('#toc').classList.remove('open');
+    if (!e.target.closest('#toc') && !e.target.closest('#btnToc')) toggleToc(false);
   });
 
   /* ---------------- search ---------------- */
@@ -1898,7 +1889,6 @@ const Reflow = (() => {
   const HL = window.Highlight && CSS.highlights ? { all: new Highlight(), cur: new Highlight() } : null;
   if (HL) HL.cur.priority = 1;
   const searchOpen = () => $('#search').classList.contains('open');
-  const escHTML = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // A block's text plus where each text node starts in it. Line-ish elements (<br>, verse lines,
   // a heading's subtitle, a quote's paragraphs) contribute a '\n', so words either side of a break
@@ -1922,9 +1912,7 @@ const Reflow = (() => {
     return { text, segs };
   }
   function locate(segs, pos, isEnd) { // text offset -> [node, offset]; an end offset stays in the node it ends
-    let lo = 0, hi = segs.length - 1;
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (isEnd ? segs[mid].start < pos : segs[mid].start <= pos) lo = mid; else hi = mid - 1; }
-    const s = segs[lo];
+    const s = segs[Math.max(0, lastAtOrBefore(segs.length, k => segs[k].start, isEnd ? pos - 1 : pos))];
     return [s.node, Math.max(0, Math.min(s.node.length, pos - s.start))];
   }
 
@@ -1945,14 +1933,7 @@ const Reflow = (() => {
     const re = doc && doc.blocks && Reflow.searchPattern(SR.q);
     if (!re) { SR.pending = 0; searchStatus(); return; }
     SR.done = false;
-    const B = doc.blocks, off = doc.srcOff, [r0, r1] = doc.range, pct = progressMode() === 'pct';
-    const plain = t => String(t).replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
-    const heads = doc.res.nodes.filter(nd => nd.type === 'heading' && !nd.boiler).map(nd => ({ line: nd.src[0], label: plain(nd.label) }));
-    const chapterAt = line => { // last heading starting at or before the line
-      let lo = 0, hi = heads.length - 1, r = null;
-      while (lo <= hi) { const mid = (lo + hi) >> 1; if (heads[mid].line <= line) { r = heads[mid]; lo = mid + 1; } else hi = mid - 1; }
-      return r ? r.label : '';
-    };
+    const B = doc.blocks, off = doc.srcOff, pct = progressMode() === 'pct';
     let i = 0;
     (function slice() {
       if (gen !== SR.gen) return; // superseded by a newer query
@@ -1972,9 +1953,8 @@ const Reflow = (() => {
           const src = off[s] + (a / text.length) * (off[e + 1] - off[s]);
           const k = SR.hits.push({ range, src, el, line: s }) - 1;
           if (HL) HL.all.add(range);
-          if (ch === undefined) ch = chapterAt(s);
-          const at = Math.max(0, Math.min(1, (src - r0) / Math.max(1, r1 - r0)));
-          const where = pct ? Math.floor(at * 100) + '%' : 'Loc ' + (Math.floor(at * (r1 - r0) / 128) + 1);
+          if (ch === undefined) ch = chapterAtLine(s);
+          const pr = progressAt(src, false), where = pct ? Math.floor(pr.pct * 100) + '%' : 'Loc ' + pr.loc;
           rows += `<button class="hit" data-k="${k}"><span class="ctx">${snippet(text, a, b)}</span><span class="where">${ch ? escHTML(ch) + ' · ' : ''}${where}</span></button>`;
         }
       }
@@ -2005,9 +1985,8 @@ const Reflow = (() => {
   function revealHit(h) {
     flushRelayout(); // e.g. the panel just docked and narrowed the page
     stopTurn();
-    const r = h.range, rect = r.getClientRects()[0] || r.getBoundingClientRect();
-    if (isPaged()) setPage(Math.floor((rect.left + 2 - content.getBoundingClientRect().left) / stride));
-    else stage.scrollTop += rect.top - stage.getBoundingClientRect().top - stage.clientHeight / 3;
+    const r = h.range;
+    revealRect(r.getClientRects()[0] || r.getBoundingClientRect(), stage.clientHeight / 3);
     held = { caret: { node: r.startContainer, offset: r.startOffset }, el: h.el, line: h.line, src: h.src };
     ownScrollTop = stage.scrollTop;
     updateIndicator();
@@ -2047,7 +2026,7 @@ const Reflow = (() => {
 
   function openSearch() {
     if (!doc) return;
-    $('#toc').classList.remove('open');
+    toggleToc(false);
     if (!searchOpen()) {
       $('#search').classList.add('open');
       $('#search .sbody').inert = false; $('#searchTab').setAttribute('aria-expanded', 'true');
@@ -2131,11 +2110,11 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     if (e.key === 'F3' && searchOpen() && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); searchGo(e.shiftKey ? -1 : 1); return; }
     if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key;
-    if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); $('#toc').classList.remove('open'); closeSearch(); return; }
+    if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); toggleToc(false); closeSearch(); return; }
     if (k === 'o' || k === 'O') { $('#fileInput').click(); return; }
     if (k === 'h' || k === 'H') { goHome(); return; }
     if (!doc) return;
-    if (k === 't' || k === 'T') { $('#toc').classList.toggle('open'); return; }
+    if (k === 't' || k === 'T') { toggleToc(); return; }
     if (k === '/') { e.preventDefault(); openSearch(); return; }
     if (k === 'd' || k === 'D') { $('#btnDebug').click(); return; }
     if (k === 'r' || k === 'R') { setView(view === 'raw' ? 'reflow' : 'raw'); return; }

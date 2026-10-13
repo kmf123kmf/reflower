@@ -9,7 +9,7 @@
 <script>
 // Usage: /tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=2&view=reflow&debug=1&show=1
 // Headless: chrome --headless --screenshot=x.png --window-size=1400,900 <url>   or  --dump-dom to read #out
-// &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
+// &toc=<n> clicks the nth Contents entry. &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
 // &search=<text>[&next=N] types into the search panel and presses Enter N times. Add Chrome's
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
@@ -42,6 +42,12 @@ f.addEventListener('load', async () => {
     if (q.get('view')) app.setView(q.get('view'));
     if (q.get('page')) app.setPage(+q.get('page'), false);
     out.push(`final: ${JSON.stringify({ page: app.state.page, pages: app.state.pages, view: app.state.view, layout: app.state.layout })}`);
+    if (q.get('toc')) { // click the Nth Contents entry
+      const d = w.document, link = d.querySelectorAll('#tocList a')[+q.get('toc')];
+      link.click(); await new Promise(r => setTimeout(r, 400));
+      const h = d.getElementById(link.dataset.id).getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect(), st = d.getElementById('stage').getBoundingClientRect();
+      out.push(`toc "${link.textContent}" -> page ${app.state.page}, heading ${h.left >= v.left - 1 && h.right <= v.right + 1 && h.top >= st.top && h.bottom <= st.bottom ? 'visible' : 'NOT VISIBLE'} (y=${Math.round(h.top - st.top)})`);
+    }
     if (q.get('scrub') || q.get('hover')) { // the scrub bar: &scrub=<range value> drags to it, &hover=<0..1> hovers
       const d = w.document, r = d.getElementById('scrubRange'), tip = d.getElementById('scrubTip');
       out.push(`scrub: max=${r.max} value=${r.value} ticks=${d.querySelectorAll('#scrubTicks i').length}`);
