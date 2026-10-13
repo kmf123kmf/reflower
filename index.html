@@ -54,6 +54,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 .panel { position: absolute; top: var(--tb-h, 40px); z-index: 30; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: none; min-width: 240px; }
 .panel.open { display: block; }
 .panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 7px 0; }
+.panel label:has(input:disabled) { opacity: .45; }
 .panel input[type="range"] { width: 130px; }
 /* dropdowns in the theme's colours, open list included (the browser draws that, on a light
    background unless told otherwise, which left the dark theme's light text unreadable) */
@@ -317,6 +318,7 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
   <label>Alignment <select id="setAlign"><option value="left">Left</option><option value="justify">Justified</option></select></label>
   <label>Paragraphs <select id="setPara"><option value="spaced">Spaced</option><option value="indent">Indented</option></select></label>
   <label>Smart typography <input type="checkbox" id="setSmart"></label>
+  <label title="Find chapter titles and headings for the contents, the scrub bar and page breaks. Off: they read like the text around them (centred ones stay centred).">Detect headings <input type="checkbox" id="setHeadings"></label>
   <label>Chapters start new page <input type="checkbox" id="setChapter"></label>
 </div>
 
@@ -953,12 +955,15 @@ const Reflow = (() => {
       return { type: 'verse', lines: L.map(l => ({ text: l.text, indent: l.indent - min })), src: src(L) };
     };
 
+    // Titles and headings also keep their own lines, and whether the source centred them, so they
+    // can be shown as ordinary text when heading detection is turned off (toHTML's `headings`).
+    const asText = L => { const T = L.filter(l => !isRuleLike(l.text)); return { lines: T.map(l => tidy(l.text)), centered: T.every(l => isCentered(l, ctx.W, ctx.paraIndent)) }; };
     for (const it of items) {
       const L = it.lines;
       switch (it.type) {
         case 'title': case 'byline': case 'meta': case 'center':
           mark(L, it.type);
-          nodes.push({ type: it.type, lines: L.map(l => tidy(l.text)), src: src(L) });
+          nodes.push({ type: it.type, lines: L.map(l => tidy(l.text)), src: src(L), ...(it.type === 'title' ? { plain: asText(L) } : {}) });
           break;
         case 'verse':
           nodes.push(verseNode(L));
@@ -977,7 +982,7 @@ const Reflow = (() => {
           break;
         case 'heading':
           mark(L, 'heading'); mark(it.subLines, 'subtitle');
-          nodes.push({ type: 'heading', level: it.level, label: tidy(it.label), sub: tidy(it.sub || ''), src: src([...L, ...it.subLines]) });
+          nodes.push({ type: 'heading', level: it.level, label: tidy(it.label), sub: tidy(it.sub || ''), src: src([...L, ...it.subLines]), plain: asText([...L, ...it.subLines]) });
           break;
         case 'prose': {
           const sec = secs[it.sec], Ws = sec.W, n = L.length;
@@ -1239,13 +1244,19 @@ const Reflow = (() => {
         wrap = (open ? '</details>' : '') + (nd.boiler ? `<details class="boiler"><summary>${esc(nd.boiler)}</summary>` : '');
         open = nd.boiler || null;
       }
-      return wrap + nodeHTML(nd, i, nd.boiler ? [] : toc, fmt);
+      return wrap + nodeHTML(nd, i, nd.boiler ? [] : toc, fmt, opts.headings !== false);
     }).join('\n') + (open ? '</details>' : '');
     return { html, toc };
   }
 
-  function nodeHTML(nd, i, toc, fmt) {
+  // headings = false: titles and headings read as the text around them (centred if the source
+  // centred them, else a paragraph) and stay out of the contents.
+  function nodeHTML(nd, i, toc, fmt, headings = true) {
       const a = `data-i="${i}" data-s="${nd.src[0]}" data-e="${nd.src[1]}" data-kind="${nd.type === 'p' ? 'prose' : nd.type}" data-src="L${nd.src[0] + 1}${nd.src[1] > nd.src[0] ? '–' + (nd.src[1] + 1) : ''}"`;
+      if (!headings && nd.plain) {
+        const body = nd.plain.lines.map(fmt).join('<br>');
+        return nd.plain.centered ? `<div class="center" ${a}>${body}</div>` : `<p ${a}>${body}</p>`;
+      }
       switch (nd.type) {
         case 'title':
           toc.push({ id: `n${i}`, level: 0, text: nd.lines[0] });
@@ -1404,7 +1415,7 @@ const Reflow = (() => {
     if (fontQueue.length) whenIdle(checkFonts); else buildFontMenu();
   });
 
-  const DEFAULTS = { progress: 'loc', theme: 'light', font: null, fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
+  const DEFAULTS = { progress: 'loc', theme: 'light', font: null, fs: 20, lh: 1.7, align: 'left', para: 'spaced', smart: true, headings: true, chapterBreaks: true, layout: 'scroll', widths: { scroll: 760, page: 760, spread: 1320 } };
   const S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('reflower.settings') || '{}'));
   S.widths = Object.assign({}, DEFAULTS.widths, S.widths);
   const save = () => localStorage.setItem('reflower.settings', JSON.stringify(S));
@@ -1438,6 +1449,7 @@ const Reflow = (() => {
     document.body.classList.toggle('has-doc', !!doc);
     $('#setTheme').value = S.theme; if (fontMenu) $('#setFont').value = (fontMenu.find(f => f.label === fontOf(S.font).label) || {}).id || ''; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
     $('#setAlign').value = S.align; $('#setPara').value = S.para; $('#setSmart').checked = S.smart; $('#setChapter').checked = S.chapterBreaks;
+    $('#setHeadings').checked = S.headings; $('#setChapter').disabled = !S.headings; // no headings, no chapter breaks
     // Raw always scrolls: show that, and lock the layout buttons (the saved layout is kept for Reflowed)
     const rawLock = !!doc && view === 'raw';
     document.querySelectorAll('#layoutSeg button').forEach(b => {
@@ -1466,6 +1478,7 @@ const Reflow = (() => {
   bindSetting('#setAlign', 'align', t => t.value);
   bindSetting('#setPara', 'para', t => t.value);
   bindSetting('#setSmart', 'smart', t => t.checked, true);
+  bindSetting('#setHeadings', 'headings', t => t.checked, true);
   bindSetting('#setChapter', 'chapterBreaks', t => t.checked);
 
   /* ---------------- loading ---------------- */
@@ -1651,8 +1664,9 @@ const Reflow = (() => {
     lines.forEach((l, i) => { off[i + 1] = off[i] + l.raw.length + 1; });
     const body = doc.res.nodes.filter(nd => !nd.boiler);
     doc.range = body.length ? [off[body[0].src[0]], off[body[body.length - 1].src[1] + 1]] : [0, off[lines.length]];
-    // Chapters (headings outside folded boilerplate), for the search results and the scrub bar.
-    doc.chapters = body.filter(nd => nd.type === 'heading').map(nd => ({ line: nd.src[0], label: Reflow.stripMarkers(nd.label) }));
+    // Chapters (headings outside folded boilerplate), for the search results and the scrub bar
+    // (only while heading detection is on: see render).
+    doc.detected = body.filter(nd => nd.type === 'heading').map(nd => ({ line: nd.src[0], label: Reflow.stripMarkers(nd.label) }));
   }
   function chapterAtLine(line) {
     const C = doc.chapters, k = lastAtOrBefore(C.length, j => C[j].line, line);
@@ -1662,6 +1676,7 @@ const Reflow = (() => {
   /* ---------------- rendering ---------------- */
   function render(anchor) {
     if (!doc) return;
+    doc.chapters = S.headings ? doc.detected : [];
     if (view === 'raw') {
       const { lines, info } = doc.res;
       content.className = 'raw';
@@ -1672,7 +1687,7 @@ const Reflow = (() => {
         return `<div class="rl j-${x.join || 'none'}" data-l="${i}" data-kind="${x.kind}"${tip}><span class="ln">${i + 1}</span><span class="rt">${escHTML(l.raw) || ' '}</span><span class="rd">${glyph}</span></div>`;
       }).join('') + '<div id="endSentinel"></div>';
     } else {
-      const { html, toc } = Reflow.toHTML(doc.res.nodes, { smart: S.smart });
+      const { html, toc } = Reflow.toHTML(doc.res.nodes, { smart: S.smart, headings: S.headings });
       content.className = '';
       content.innerHTML = html + '<div id="endSentinel"></div>';
       doc.toc = toc;
@@ -1712,7 +1727,7 @@ const Reflow = (() => {
 
   function renderToc() {
     const list = $('#tocList');
-    if (!doc || !doc.toc || !doc.toc.length) { list.innerHTML = '<div class="empty">No headings detected</div>'; return; }
+    if (!doc || !doc.toc || !doc.toc.length) { list.innerHTML = `<div class="empty">${S.headings ? 'No headings detected' : 'Heading detection is off (Settings)'}</div>`; return; }
     const minL = Math.min(...doc.toc.filter(t => t.level > 0).map(t => t.level), 2);
     list.innerHTML = doc.toc.map(t => {
       const lvl = t.level === 0 ? 0 : t.level - minL + 1;
@@ -2384,7 +2399,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   $('#expTxt').addEventListener('click', () => { if (doc) download(baseName() + '.reflowed.txt', 'text/plain;charset=utf-8', Reflow.toText(doc.res.nodes, { smart: S.smart })); });
   $('#expHtml').addEventListener('click', () => {
     if (!doc) return;
-    const { html } = Reflow.toHTML(doc.res.nodes, { smart: S.smart });
+    const { html } = Reflow.toHTML(doc.res.nodes, { smart: S.smart, headings: S.headings });
     const title = (doc.res.stats.title || baseName()).replace(/</g, '&lt;');
     download(baseName() + '.html', 'text/html;charset=utf-8',
       `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${exportCSS()}</style></head>\n<body><article>\n${html}\n</article></body></html>\n`);
