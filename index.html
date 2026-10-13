@@ -240,6 +240,12 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   .panel { left: 8px; right: 8px !important; min-width: 0; max-height: calc(100% - var(--tb-h, 40px) - 8px); overflow-y: auto; }
   .panel input[type="range"] { width: auto; flex: 1; max-width: 180px; }
   #toc, #search { width: 100%; max-width: none; }
+  /* Search is a sheet under the toolbar and the page lays itself out in the space below it, so a tapped
+     result shows in context. At the top rather than the bottom: the on-screen keyboard covers the bottom. */
+  body { --sheet-h: min(42vh, 380px); }
+  #search { bottom: auto; height: var(--sheet-h); border-left: 0; border-bottom: 1px solid var(--border); transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
+  #search.open { opacity: 1; visibility: visible; transition: opacity .15s; }
+  body.has-doc.search-open #stage { margin-top: var(--sheet-h); }
   #searchInput { font-size: 16px; } /* smaller text makes iOS zoom the page on focus */
   #dropHint { padding: 6vh 4px; }
   #dropHint .box { padding: 28px 16px; }
@@ -2206,7 +2212,12 @@ const Reflow = (() => {
   $('#searchClose').addEventListener('click', closeSearch);
   $('#searchNext').addEventListener('click', () => { flushSearch(); searchGo(1); });
   $('#searchPrev').addEventListener('click', () => { flushSearch(); searchGo(-1); });
-  $('#searchList').addEventListener('click', e => { const b = e.target.closest('.hit'); if (b) selectHit(+b.dataset.k); });
+  $('#searchList').addEventListener('click', e => {
+    const b = e.target.closest('.hit');
+    if (!b) return;
+    if (compactMQ.matches && document.activeElement === $('#searchInput')) $('#searchInput').blur(); // phones: drop the keyboard so the page shows
+    selectHit(+b.dataset.k);
+  });
   $('#searchBack').addEventListener('click', () => {
     if (SR.origin == null || !doc) return;
     const a = anchorAtSrc(SR.origin);

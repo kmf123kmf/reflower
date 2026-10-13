@@ -91,13 +91,21 @@ f.addEventListener('load', async () => {
       const before = app.state.page;
       out.push(`pane ${pane0} -> ${paneBox()} with the panel open (panel from ${Math.round(d.getElementById('search').getBoundingClientRect().left)})`);
       for (let n = +(q.get('next') || 1); n > 0; n--) inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      if (q.get('tap')) { // &tap=N then taps the Nth result row, as on a phone
+        await new Promise(r => setTimeout(r, 300));
+        d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
+        out.push(`tapped row ${q.get('tap')}; keyboard ${d.activeElement === inp ? 'STILL UP (input focused)' : 'dismissed'}`);
+      }
       await new Promise(r => setTimeout(r, 400)); // let the page turn finish
       const s = app.state.search;
       out.push(`search "${s.q}": total=${s.total} shown=${s.shown} cur=${s.cur} done=${s.done} in ${Math.round(performance.now() - t0)}ms; page ${before} -> ${app.state.page}`);
       out.push(`status: ${d.getElementById('searchStatus').textContent}`);
       const hc = w.CSS.highlights && w.CSS.highlights.get('search-cur'), cr = hc && [...hc][0];
-      if (cr) { const r = cr.getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect();
-        out.push(`current match ${r && r.left <= v.right && r.right >= v.left && r.top >= v.top && r.bottom <= v.bottom ? 'visible' : 'NOT VISIBLE'} (x=${Math.round(r.left)} y=${Math.round(r.top)}; viewport x ${Math.round(v.left)}-${Math.round(v.right)} y ${Math.round(v.top)}-${Math.round(v.bottom)})`); }
+      if (cr) { d.getAnimations().forEach(a => a.finish());
+        const r = cr.getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect(), sv = d.getElementById('stage').getBoundingClientRect();
+        const sp = d.getElementById('search').getBoundingClientRect(), under = sp.width >= w.innerWidth - 1 && r.top < sp.bottom; // a full-width sheet covering it
+        const top = Math.max(v.top, sv.top), bottom = Math.min(v.bottom, sv.bottom);
+        out.push(`current match ${r && !under && r.left <= v.right && r.right >= v.left && r.top >= top && r.bottom <= bottom ? 'visible' : 'NOT VISIBLE'} (x=${Math.round(r.left)} y=${Math.round(r.top)}; text area x ${Math.round(v.left)}-${Math.round(v.right)} y ${Math.round(top)}-${Math.round(bottom)}; search panel y ${Math.round(sp.top)}-${Math.round(sp.bottom)})`); }
       const row = d.querySelector('#searchList .hit.cur');
       out.push(`current row: ${row ? row.textContent : '(none)'}`);
     }
