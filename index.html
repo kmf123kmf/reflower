@@ -165,7 +165,7 @@ body.debug #content:not(.raw) [data-kind]::before { content: attr(data-kind) " "
 body.debug .rl { border-left: 4px solid var(--dc); }
 body.debug .rl.j-soft .rd { color: #27ae60; } body.debug .rl.j-para .rd { color: #c0392b; } body.debug .rl.j-br .rd { color: #d35400; }
 #debugBox { position: fixed; right: 12px; bottom: 12px; z-index: 25; background: var(--ui); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 10px 12px; font: 11px/1.5 Consolas, monospace; display: none; max-width: 340px; }
-body.debug #debugBox { display: block; }
+body.debug #debugBox:not(:empty) { display: block; }
 #debugBox table { border-collapse: collapse; } #debugBox td { padding: 0 8px 0 0; vertical-align: top; } #debugBox td:first-child { color: var(--muted); white-space: nowrap; }
 #debugBox input { width: 60px; font: inherit; }
 
@@ -1325,10 +1325,12 @@ const Reflow = (() => {
     document.querySelectorAll('#layoutSeg button').forEach(b => {
       const on = b.dataset.layout === layoutNow();
       b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
-      b.setAttribute('aria-disabled', rawLock); b.setAttribute('aria-label', b.dataset.label);
+      b.disabled = !doc; b.setAttribute('aria-disabled', rawLock); b.setAttribute('aria-label', b.dataset.label);
       b.dataset.tip = rawLock ? 'Raw view always scrolls' : b.dataset.label;
     });
-    document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    document.querySelectorAll('#viewSeg button').forEach(b => { b.classList.toggle('on', b.dataset.view === view); b.disabled = !doc; });
+    // Controls that act on the open file are disabled on the Home screen (Settings and Open stay usable).
+    ['#btnHome', '#btnDebug', '#btnExport'].forEach(sel => { $(sel).disabled = !doc; });
     $('#btnDebug').classList.toggle('on', debug);
     document.body.classList.toggle('debug', debug);
   }
