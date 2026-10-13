@@ -135,7 +135,7 @@ body.debug #debugBox { display: block; }
 #debugBox input { width: 60px; font: inherit; }
 
 /* ---------- TOC ---------- */
-#toc { position: fixed; top: 41px; left: 0; bottom: 0; width: 300px; z-index: 15; background: var(--ui); border-right: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; padding: 12px 0; }
+#toc { position: fixed; top: var(--tb-h, 41px); left: 0; bottom: 0; width: 300px; z-index: 15; background: var(--ui); border-right: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; padding: 12px 0; }
 #toc.open { transform: none; }
 #toc h4 { margin: 0 16px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 #toc a { display: block; padding: 5px 16px; color: var(--fg); text-decoration: none; font-family: var(--font); font-size: 14px; }
@@ -143,6 +143,29 @@ body.debug #debugBox { display: block; }
 #toc a.l0 { font-weight: 600; } #toc a.l2 { padding-left: 30px; } #toc a.l3 { padding-left: 44px; }
 #toc a small { color: var(--muted); font-style: italic; }
 #toc .empty { padding: 5px 16px; color: var(--muted); }
+
+/* ---------- search ---------- */
+#search { position: fixed; top: var(--tb-h, 41px); right: 0; bottom: 0; width: 340px; max-width: 100%; z-index: 15; display: flex; flex-direction: column; background: var(--ui); border-left: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(105%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
+#search.open { transform: none; visibility: visible; }
+@media (min-width: 860px) { body.search-open #stage { margin-right: 340px; } } /* room to spare: dock beside the page */
+#search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
+#searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
+#searchInput:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+#search .sbar button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
+#search .sbar button:hover { background: var(--paper); }
+#search .sstatus { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 24px; padding: 0 12px 6px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#searchBack { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; white-space: nowrap; }
+#searchBack:hover { text-decoration: underline; }
+#searchList { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--border); }
+#searchList .hit { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 7px 12px; color: var(--fg); font: 14px/1.4 var(--font); cursor: pointer; overflow-wrap: anywhere; }
+#searchList .hit:hover { background: var(--paper); }
+#searchList .hit.cur { background: var(--paper); box-shadow: inset 3px 0 var(--accent); }
+#searchList .hit b { color: var(--accent); }
+#searchList .where { display: block; margin-top: 2px; font: 11px/1.3 "Segoe UI", system-ui, sans-serif; color: var(--muted); }
+::highlight(search) { background-color: rgba(255, 196, 0, .4); }
+::highlight(search-cur) { background-color: #ff9632; color: #000; }
+html[data-theme="dark"] ::highlight(search) { background-color: rgba(217, 160, 102, .3); }
+html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; color: #111; }
 </style>
 </head>
 <body class="chapter-breaks">
@@ -150,6 +173,7 @@ body.debug #debugBox { display: block; }
 <header id="toolbar">
   <button id="btnHome" title="Home: recent files (H)">Home</button>
   <button id="btnToc" title="Contents (T)">&#9776; Contents</button>
+  <button id="btnSearch" title="Search (/)">Search</button>
   <button id="btnOpen" title="Open a text file (O)">Open</button>
   <span id="docname"></span>
   <span class="spacer"></span>
@@ -189,6 +213,16 @@ body.debug #debugBox { display: block; }
 </div>
 
 <nav id="toc"><h4>Contents</h4><div id="tocList"><div class="empty">No document loaded</div></div></nav>
+
+<aside id="search">
+  <div class="sbar">
+    <input id="searchInput" type="search" placeholder="Search the text" autocomplete="off" spellcheck="false">
+    <button id="searchPrev" title="Previous match (Shift+Enter, Shift+F3)">&#8249;</button><button id="searchNext" title="Next match (Enter, F3)">&#8250;</button>
+    <button id="searchClose" title="Close (Esc)">&#10005;</button>
+  </div>
+  <div class="sstatus"><span id="searchStatus"></span><button id="searchBack" hidden title="Return to the reading position from before you jumped to a match">&#8617; Back to where I was</button></div>
+  <div id="searchList"></div>
+</aside>
 
 <main id="stage" tabindex="-1">
   <div id="pane">
@@ -1092,7 +1126,25 @@ const Reflow = (() => {
     }).join('\n\n') + '\n';
   }
 
-  return { analyze, fromRTF, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading };
+  /* ---------- search (the UI's find panel matches rendered text with these) ---------- */
+  // One-for-one character folding, so offsets in the folded text are offsets in the original:
+  // curly quotes and primes become straight ones, dash variants short of an em dash become '-'.
+  const FOLD = { '‘': "'", '’': "'", '‚': "'", '‛': "'", '′': "'", '“': '"', '”': '"', '„': '"', '‟': '"', '″': '"', '–': '-', '‐': '-', '‑': '-', '‒': '-', ' ': ' ' };
+  const searchFold = s => s.replace(/[‘’‚‛′“”„‟″–‐‑‒ ]/g, c => FOLD[c]);
+
+  // A literal query as a case-insensitive RegExp over searchFold()ed text, or null if it has fewer
+  // than 2 non-space characters. Whitespace matches any whitespace (including line breaks within a
+  // block), and the multi-character spellings smart typography rewrites match either form:
+  // '--' / '---' / '—' and '...' / '…'.
+  function searchPattern(q) {
+    q = searchFold(String(q)).trim();
+    if (q.replace(/\s+/g, '').length < 2) return null;
+    const src = q.replace(/(\s+)|(—|-{2,3})|(…|\.{3})|([\\^$.*+?()[\]{}|/])/g, (m, ws, dash, ell, meta) =>
+      ws ? '\\s+' : dash ? '(?:—|-{2,3})' : ell ? '(?:…|\\.{3})' : '\\' + meta);
+    return new RegExp(src, 'giu');
+  }
+
+  return { analyze, fromRTF, toHTML, toText, smarten, estimateWidth, normalize, endType, startType, matchHeading, searchFold, searchPattern };
 })();
 </script>
 
@@ -1188,6 +1240,7 @@ const Reflow = (() => {
 
   function loadText(text, name, extra = {}) {
     savePosNow();
+    resetSearch();
     doc = { name, text, ...extra };
     if (!doc.key) doc.key = hashText(text);
     analyze();
@@ -1362,12 +1415,14 @@ const Reflow = (() => {
     held = anchor; // so toggling back and forth (Raw, smart typography) lands on the same spot every time
     relayout(anchor);
     if (!anchor) { stage.scrollTop = 0; setPage(0, false); }
+    if (SR.q) runSearch(); // new DOM: the old match ranges point at detached nodes
   }
 
   const HOME_HTML = content.innerHTML, HOME_TITLE = document.title;
   function goHome() {
     if (!doc) return;
     savePosNow();
+    resetSearch();
     clearTimeout(progTimer); progTimer = 0;
     doc = null; held = null; page = 0; pages = 1;
     content.className = '';
@@ -1424,6 +1479,7 @@ const Reflow = (() => {
   function relayout(anchor) {
     stopTurn();
     const paged = isPaged();
+    document.documentElement.style.setProperty('--tb-h', $('#toolbar').offsetHeight + 'px'); // drawers sit below it, even when it wraps
     document.body.classList.toggle('paged', paged);
     document.body.classList.toggle('spread', paged && S.layout === 'spread');
     const w = Math.min(S.widths[S.layout] || 760, window.innerWidth - 24);
@@ -1621,7 +1677,12 @@ const Reflow = (() => {
   function scheduleRelayout(anchor) {
     if (!pendingAnchor) pendingAnchor = anchor || holdAnchor();
     cancelAnimationFrame(rafId);
-    rafId = requestAnimationFrame(() => { const a = pendingAnchor; pendingAnchor = null; relayout(a); });
+    rafId = requestAnimationFrame(flushRelayout);
+  }
+  function flushRelayout() { // run a scheduled relayout now (before navigating, so it can't undo the move)
+    if (!pendingAnchor) return;
+    cancelAnimationFrame(rafId);
+    const a = pendingAnchor; pendingAnchor = null; relayout(a);
   }
   window.addEventListener('resize', () => scheduleRelayout());
   stage.addEventListener('scroll', () => { if (!isPaged()) updateIndicator(); });
@@ -1682,6 +1743,218 @@ const Reflow = (() => {
     if (!e.target.closest('#toc') && !e.target.closest('#btnToc')) $('#toc').classList.remove('open');
   });
 
+  /* ---------------- search ---------------- */
+  // Literal search over the rendered text, block by block in ~8 ms slices so a long book never
+  // freezes the page; hits stream into the list as they're found. Matches are CSS Custom Highlight
+  // ranges, not <mark>s, so the DOM (and every anchor's caret node) is left untouched. Folded
+  // boilerplate isn't searched: those blocks sit inside <details> and aren't in doc.blocks.
+  const SHOW_MAX = 1000; // rows/highlights kept; matches beyond this are only counted
+  const SR = { q: '', gen: 0, hits: [], total: 0, done: true, cur: -1, pending: 0, origin: null };
+  const HL = window.Highlight && CSS.highlights ? { all: new Highlight(), cur: new Highlight() } : null;
+  if (HL) HL.cur.priority = 1;
+  const searchOpen = () => $('#search').classList.contains('open');
+  const escHTML = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // A block's text plus where each text node starts in it. Line-ish elements (<br>, verse lines,
+  // a heading's subtitle, a quote's paragraphs) contribute a '\n', so words either side of a break
+  // don't run together, and a phrase can still match across it (the pattern turns spaces into \s+).
+  const LINE_TAGS = new Set(['BR', 'P', 'DIV', 'H1', 'H2']);
+  function blockText(el) {
+    const segs = [];
+    let text = '';
+    const brk = () => { if (text && text[text.length - 1] !== '\n') text += '\n'; };
+    (function walk(n) {
+      for (let c = n.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 3) { segs.push({ node: c, start: text.length }); text += c.data; }
+        else if (c.nodeType === 1) {
+          const line = LINE_TAGS.has(c.tagName) || c.classList.contains('sub');
+          if (line) brk();
+          walk(c);
+          if (line) brk();
+        }
+      }
+    })(textRoot(el));
+    return { text, segs };
+  }
+  function locate(segs, pos, isEnd) { // text offset -> [node, offset]; an end offset stays in the node it ends
+    let lo = 0, hi = segs.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (isEnd ? segs[mid].start < pos : segs[mid].start <= pos) lo = mid; else hi = mid - 1; }
+    const s = segs[lo];
+    return [s.node, Math.max(0, Math.min(s.node.length, pos - s.start))];
+  }
+
+  function snippet(text, a, b) {
+    const W = 40;
+    let s = Math.max(0, a - W), e = Math.min(text.length, b + W);
+    if (s > 0) { const sp = text.indexOf(' ', s); if (sp > -1 && sp < a) s = sp + 1; }
+    if (e < text.length) { const sp = text.lastIndexOf(' ', e); if (sp > b) e = sp; }
+    const t = x => escHTML(x.replace(/\s+/g, ' '));
+    return (s > 0 ? '…' : '') + t(text.slice(s, a)) + '<b>' + t(text.slice(a, b)) + '</b>' + t(text.slice(b, e)) + (e < text.length ? '…' : '');
+  }
+
+  function runSearch() {
+    const gen = ++SR.gen;
+    Object.assign(SR, { hits: [], total: 0, cur: -1, done: true });
+    if (HL) { HL.all.clear(); HL.cur.clear(); }
+    $('#searchList').innerHTML = '';
+    const re = doc && doc.blocks && Reflow.searchPattern(SR.q);
+    if (!re) { SR.pending = 0; searchStatus(); return; }
+    SR.done = false;
+    const B = doc.blocks, off = doc.srcOff, [r0, r1] = doc.range, pct = progressMode() === 'pct';
+    const plain = t => String(t).replace(/\*\*|(?<!\p{L})_|_(?!\p{L})/gu, '');
+    const heads = doc.res.nodes.filter(nd => nd.type === 'heading' && !nd.boiler).map(nd => ({ line: nd.src[0], label: plain(nd.label) }));
+    const chapterAt = line => { // last heading starting at or before the line
+      let lo = 0, hi = heads.length - 1, r = null;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (heads[mid].line <= line) { r = heads[mid]; lo = mid + 1; } else hi = mid - 1; }
+      return r ? r.label : '';
+    };
+    let i = 0;
+    (function slice() {
+      if (gen !== SR.gen) return; // superseded by a newer query
+      const end = performance.now() + 8;
+      let rows = '';
+      for (; i < B.length && performance.now() < end; i++) {
+        const el = B[i], { text, segs } = blockText(el);
+        if (!segs.length) continue;
+        const folded = Reflow.searchFold(text), [s, e] = blockSpan(el);
+        let m, ch;
+        re.lastIndex = 0;
+        while ((m = re.exec(folded))) {
+          SR.total++;
+          if (SR.hits.length >= SHOW_MAX) continue;
+          const a = m.index, b = a + m[0].length, range = document.createRange();
+          range.setStart(...locate(segs, a, false)); range.setEnd(...locate(segs, b, true));
+          const src = off[s] + (a / text.length) * (off[e + 1] - off[s]);
+          const k = SR.hits.push({ range, src, el, line: s }) - 1;
+          if (HL) HL.all.add(range);
+          if (ch === undefined) ch = chapterAt(s);
+          const at = Math.max(0, Math.min(1, (src - r0) / Math.max(1, r1 - r0)));
+          const where = pct ? Math.floor(at * 100) + '%' : 'Loc ' + (Math.floor(at * (r1 - r0) / 128) + 1);
+          rows += `<button class="hit" data-k="${k}"><span class="ctx">${snippet(text, a, b)}</span><span class="where">${ch ? escHTML(ch) + ' · ' : ''}${where}</span></button>`;
+        }
+      }
+      if (rows) $('#searchList').insertAdjacentHTML('beforeend', rows);
+      if (i >= B.length) SR.done = true; else setTimeout(slice, 0);
+      if (SR.pending) { const d = SR.pending; SR.pending = 0; searchGo(d); }
+      searchStatus();
+    })();
+  }
+
+  function searchStatus() {
+    const n = x => x.toLocaleString(), shown = SR.hits.length, q = SR.q.trim();
+    let t = '';
+    if (q && !Reflow.searchPattern(q)) t = 'Type at least 2 characters';
+    else if (q && !SR.done) t = `Searching… ${n(SR.total)} found`;
+    else if (q && !SR.total) t = 'No matches';
+    else if (q) {
+      t = SR.cur >= 0 ? `${n(SR.cur + 1)} of ${n(shown)}` : `${n(SR.total)} match${SR.total === 1 ? '' : 'es'}`;
+      if (SR.total > shown) t += SR.cur >= 0 ? ` shown (${n(SR.total)} in all)` : ` · first ${n(shown)} listed`;
+    }
+    $('#searchStatus').textContent = t;
+    $('#searchBack').hidden = SR.origin == null;
+  }
+
+  // Bring a hit into view: the page holding it, or (scrolling) a third of the way down the screen.
+  // The match then becomes the held reading position, so it's what gets saved, and a relayout
+  // (resize, font change, panel docking) keeps it on screen rather than the top of the page.
+  function revealHit(h) {
+    flushRelayout(); // e.g. the panel just docked and narrowed the page
+    stopTurn();
+    const r = h.range, rect = r.getClientRects()[0] || r.getBoundingClientRect();
+    if (isPaged()) setPage(Math.floor((rect.left + 2 - content.getBoundingClientRect().left) / stride));
+    else stage.scrollTop += rect.top - stage.getBoundingClientRect().top - stage.clientHeight / 3;
+    held = { caret: { node: r.startContainer, offset: r.startOffset }, el: h.el, line: h.line, src: h.src };
+    ownScrollTop = stage.scrollTop;
+    updateIndicator();
+  }
+
+  function selectHit(k) {
+    const h = SR.hits[k];
+    if (!h) return;
+    if (SR.origin == null) { const a = currentAnchor(); SR.origin = a && a.src != null ? a.src : null; }
+    SR.cur = k;
+    if (HL) { HL.cur.clear(); HL.cur.add(h.range); }
+    revealHit(h);
+    const list = $('#searchList'), old = list.querySelector('.hit.cur'), row = list.querySelector(`.hit[data-k="${k}"]`);
+    if (old) old.classList.remove('cur');
+    if (row) { row.classList.add('cur'); row.scrollIntoView({ block: 'nearest' }); }
+    searchStatus();
+  }
+
+  // Next/previous. The first step goes from the reading position (not the top of the book); if the
+  // scan hasn't reached a match past it yet, the step waits for the scan.
+  function searchGo(dir) {
+    const H = SR.hits, n = H.length;
+    if (SR.cur >= 0 && n) { selectHit((SR.cur + dir + n) % n); return; }
+    const a = currentAnchor(), at = a && a.src != null ? a.src : 0;
+    const idx = H.findIndex(h => h.src >= at - 0.5);
+    if (dir > 0) {
+      if (idx >= 0) selectHit(idx);
+      else if (!SR.done) SR.pending = 1;
+      else if (n) selectHit(0);
+    } else {
+      if (idx > 0) selectHit(idx - 1);
+      else if (idx < 0 && n) selectHit(n - 1); // every match found so far is before the reading point
+      else if (!SR.done) SR.pending = -1;
+      else if (n) selectHit(n - 1);
+    }
+  }
+
+  function openSearch() {
+    if (!doc) return;
+    $('#toc').classList.remove('open');
+    if (!searchOpen()) {
+      $('#search').classList.add('open');
+      document.body.classList.add('search-open');
+      if (HL) { CSS.highlights.set('search', HL.all); CSS.highlights.set('search-cur', HL.cur); }
+      scheduleRelayout(); // docked beside the page on wide windows, so the page narrows
+    }
+    const inp = $('#searchInput');
+    inp.focus(); inp.select();
+  }
+  function closeSearch(keepPlace = true) {
+    if (!searchOpen()) return;
+    $('#search').classList.remove('open');
+    document.body.classList.remove('search-open');
+    if (HL) { CSS.highlights.delete('search'); CSS.highlights.delete('search-cur'); }
+    if (keepPlace) { scheduleRelayout(); stage.focus(); }
+  }
+  function resetSearch() { // new document or Home: start over (the caller lays the page out afresh)
+    closeSearch(false);
+    clearTimeout(searchTimer);
+    SR.q = ''; SR.origin = null; SR.pending = 0;
+    $('#searchInput').value = '';
+    runSearch();
+  }
+
+  let searchTimer = 0;
+  const flushSearch = () => {
+    clearTimeout(searchTimer); searchTimer = 0;
+    const q = $('#searchInput').value;
+    if (q !== SR.q) { SR.q = q; runSearch(); }
+  };
+  $('#searchInput').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(flushSearch, 200); });
+  $('#searchInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); flushSearch(); searchGo(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+  });
+  $('#btnSearch').addEventListener('click', () => (searchOpen() ? closeSearch() : openSearch()));
+  $('#searchClose').addEventListener('click', closeSearch);
+  $('#searchNext').addEventListener('click', () => { flushSearch(); searchGo(1); });
+  $('#searchPrev').addEventListener('click', () => { flushSearch(); searchGo(-1); });
+  $('#searchList').addEventListener('click', e => { const b = e.target.closest('.hit'); if (b) selectHit(+b.dataset.k); });
+  $('#searchBack').addEventListener('click', () => {
+    if (SR.origin == null || !doc) return;
+    const a = anchorAtSrc(SR.origin);
+    SR.origin = null; SR.cur = -1; // the next step goes from here again
+    if (HL) HL.cur.clear();
+    const old = $('#searchList .hit.cur');
+    if (old) old.classList.remove('cur');
+    if (a) relayout(a);
+    held = null; updateIndicator();
+    searchStatus();
+  });
+
   /* ---------------- export ---------------- */
   const baseName = () => (doc ? doc.name.replace(/\.[^.]+$/, '') : 'document');
   function download(name, type, data) {
@@ -1708,13 +1981,15 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
 
   /* ---------------- input: keys, wheel, clicks ---------------- */
   document.addEventListener('keydown', e => {
+    if (e.key === 'F3' && searchOpen() && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); searchGo(e.shiftKey ? -1 : 1); return; }
     if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key;
-    if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); $('#toc').classList.remove('open'); return; }
+    if (k === 'Escape') { Object.values(panels).forEach(s => $(s).classList.remove('open')); $('#toc').classList.remove('open'); closeSearch(); return; }
     if (k === 'o' || k === 'O') { $('#fileInput').click(); return; }
     if (k === 'h' || k === 'H') { goHome(); return; }
     if (!doc) return;
     if (k === 't' || k === 'T') { $('#toc').classList.toggle('open'); return; }
+    if (k === '/') { e.preventDefault(); openSearch(); return; }
     if (k === 'd' || k === 'D') { $('#btnDebug').click(); return; }
     if (k === 'r' || k === 'R') { setView(view === 'raw' ? 'reflow' : 'raw'); return; }
     if (k === '1' || k === '2' || k === '3') { setLayout(['scroll', 'page', 'spread'][+k - 1]); return; }
@@ -1775,7 +2050,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   applySettings();
   relayout(null);
   showRecent();
-  window.ReflowerApp = { loadText, setLayout, setView, setPage, get state() { return { page, pages, view, layout: S.layout, doc }; } };
+  window.ReflowerApp = { loadText, setLayout, setView, setPage, get state() { return { page, pages, view, layout: S.layout, doc, search: { q: SR.q, total: SR.total, shown: SR.hits.length, cur: SR.cur, done: SR.done } }; } };
 })();
 </script>
 </body>

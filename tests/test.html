@@ -27,6 +27,27 @@
     }
     const expect = await (await fetch('expectations.json')).json();
     let fails = 0;
+    { // search query -> pattern (the find panel)
+      const checks = [];
+      const chk = (label, ok) => { checks.push(`${ok ? 'ok  ' : 'FAIL'} ${label}`); if (!ok) fails++; };
+      const finds = (q, t) => { const re = Reflow.searchPattern(q); return !!re && re.test(Reflow.searchFold(t)); };
+      const sample = 'It’s “odd” – ‘really’ 5′ 6″ x';
+      chk('fold keeps length', Reflow.searchFold(sample).length === sample.length);
+      chk('fold quotes/dashes', Reflow.searchFold(sample) === `It's "odd" - 'really' 5' 6" x`);
+      chk('1 char -> null', Reflow.searchPattern('a') === null && Reflow.searchPattern('  a  ') === null && Reflow.searchPattern('') === null);
+      chk('2 chars ok', Reflow.searchPattern('ab') instanceof RegExp);
+      chk('case-insensitive', finds('elizabeth', 'ELIZABETH Bennet'));
+      chk('straight quote finds curly', finds("don't", 'I Don’t know') && finds('"yes"', 'He said “Yes” twice'));
+      chk('curly quote finds straight', finds('don’t', "I don't know"));
+      chk('-- finds em dash and back', finds('well--then', 'well—then') && finds('well—then', 'well--then') && finds('well---then', 'well—then'));
+      chk('... finds ellipsis and back', finds('wait...', 'wait… no') && finds('wait…', 'wait... no'));
+      chk('space matches line break / runs', finds('end start', 'the end\nstart') && finds('end start', 'end   start'));
+      chk('metacharacters literal', finds('a.b', 'xa.by') && !finds('a.b', 'axb') && finds('(x)+[y]', 'z(x)+[y]') && finds('a/b?', 'a/b?') && finds('$5 ^', 'pay $5 ^'));
+      chk('accents distinct', !finds('naive', 'naïve'));
+      chk('all matches found', (Reflow.searchFold('the cat the hat THE').match(Reflow.searchPattern('the')) || []).length === 3);
+      log('== search');
+      checks.forEach(x => log('   ' + x));
+    }
     for (const [name, ex] of Object.entries(expect)) {
       let text = await (await fetch('../samples/' + name)).text(), hints;
       if (name.endsWith('.rtf')) ({ text, hints } = Reflow.fromRTF(text));

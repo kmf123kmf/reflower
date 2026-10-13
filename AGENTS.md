@@ -7,6 +7,10 @@ RTF support: `Reflow.fromRTF(src)` converts RTF to plain text (bold/italic as `*
 plus `hints` (line index -> `heading` | `center` | `verse`) that `Reflow.analyze(text, { hints })`
 honours. The UI routes files ending `.rtf` or starting `{\rtf` through it.
 
+Search (`/` or the Search button) is a literal, case-insensitive find over the rendered text:
+`Reflow.searchFold` / `Reflow.searchPattern` (engine, unit-tested) build the matcher; the UI scans
+`doc.blocks` in ~8 ms slices and marks matches with the CSS Custom Highlight API (no DOM changes).
+
 ## Layout
 - `index.html` – everything. `<script id="reflow-engine">` holds the pure reflow engine
   (`Reflow.analyze / toHTML / toText`, no DOM access); the second script is the UI.
@@ -14,7 +18,8 @@ honours. The UI routes files ending `.rtf` or starting `{\rtf` through it.
   `tests/expectations.json`.
 - `tests/test.html` – engine test page (extracts the engine from `index.html`).
 - `tests/ui.html` – UI smoke test / screenshot harness (loads the app in an iframe and opens the
-  sample through a simulated file drop, so `.rtf` samples work too).
+  sample through a simulated file drop, so `.rtf` samples work too). `&search=<text>&next=N` drives
+  the search panel; run it with `--force-prefers-reduced-motion` (see the note in the file).
 - `tests/bench.html` – performance benchmark (needs `samples/real/pg1342.txt`).
 - `samples/real/` – optional real Project Gutenberg files for manual checks (not generated).
 

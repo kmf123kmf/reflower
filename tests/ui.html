@@ -9,6 +9,8 @@
 <script>
 // Usage: /tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=2&view=reflow&debug=1&show=1
 // Headless: chrome --headless --screenshot=x.png --window-size=1400,900 <url>   or  --dump-dom to read #out
+// &search=<text>[&next=N] types into the search panel and presses Enter N times. Add Chrome's
+// --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
 const f = document.getElementById('f');
 f.addEventListener('load', async () => {
@@ -39,6 +41,25 @@ f.addEventListener('load', async () => {
     if (q.get('view')) app.setView(q.get('view'));
     if (q.get('page')) app.setPage(+q.get('page'), false);
     out.push(`final: ${JSON.stringify({ page: app.state.page, pages: app.state.pages, view: app.state.view, layout: app.state.layout })}`);
+    if (q.get('search')) { // type into the search panel like a reader, then press Enter (&next=N presses it N times)
+      const d = w.document, inp = d.getElementById('searchInput');
+      d.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: '/', bubbles: true }));
+      inp.value = q.get('search');
+      inp.dispatchEvent(new w.Event('input', { bubbles: true }));
+      const t0 = performance.now();
+      for (let n = 0; n < 500 && !(app.state.search.q && app.state.search.done); n++) await new Promise(r => setTimeout(r, 20));
+      const before = app.state.page;
+      for (let n = +(q.get('next') || 1); n > 0; n--) inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await new Promise(r => setTimeout(r, 400)); // let the page turn finish
+      const s = app.state.search;
+      out.push(`search "${s.q}": total=${s.total} shown=${s.shown} cur=${s.cur} done=${s.done} in ${Math.round(performance.now() - t0)}ms; page ${before} -> ${app.state.page}`);
+      out.push(`status: ${d.getElementById('searchStatus').textContent}`);
+      const hc = w.CSS.highlights && w.CSS.highlights.get('search-cur'), cr = hc && [...hc][0];
+      if (cr) { const r = cr.getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect();
+        out.push(`current match ${r && r.left <= v.right && r.right >= v.left && r.top >= v.top && r.bottom <= v.bottom ? 'visible' : 'NOT VISIBLE'} (x=${Math.round(r.left)} y=${Math.round(r.top)}; viewport x ${Math.round(v.left)}-${Math.round(v.right)} y ${Math.round(v.top)}-${Math.round(v.bottom)})`); }
+      const row = d.querySelector('#searchList .hit.cur');
+      out.push(`current row: ${row ? row.textContent : '(none)'}`);
+    }
   } catch (e) { out.push('ERROR ' + e.stack); }
   const o = document.getElementById('out');
   o.textContent = out.join('\n');
