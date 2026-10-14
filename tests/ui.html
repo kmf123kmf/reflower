@@ -51,6 +51,11 @@ f.addEventListener('load', async () => {
       const cut = [...tb.querySelectorAll('button, #indicator')].filter(vis).filter(el => el.getBoundingClientRect().right > w.innerWidth + 0.5).map(el => el.id || el.dataset.layout || el.dataset.view);
       const pr = d.getElementById('pane').getBoundingClientRect(), vr = d.getElementById('viewport').getBoundingClientRect();
       out.push(`fit @${w.innerWidth}px: toolbar ${cut.length ? 'CUT OFF: ' + cut.join(',') : 'all visible'}; pane ${Math.round(pr.left)}-${Math.round(pr.right)}; text ${Math.round(vr.left)}-${Math.round(vr.right)} (${Math.round(vr.width)}px)${pr.right > w.innerWidth + 0.5 || pr.left < -0.5 ? ' OVERFLOWS' : ''}`);
+      // can the reading area be dragged sideways? (it can if anything in it pokes out past its edges)
+      const stg = d.getElementById('stage'), sr = stg.getBoundingClientRect();
+      const poke = [...stg.querySelectorAll('*')].filter(el => { const r = el.getBoundingClientRect(); return r.width && (r.right > sr.right + 0.5 || r.left < sr.left - 0.5); })
+        .slice(0, 6).map(el => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''}`);
+      out.push(`sideways: stage scrollWidth ${stg.scrollWidth} vs ${stg.clientWidth} (overflow-x ${getComputedStyle(stg).overflowX})${poke.length ? '; poking out: ' + poke.join(', ') : ''}`);
     }
     if (q.get('fonts')) { // the font menu here, and as it would be with typical macOS / Linux fonts
       const menu = fs => fs.map(f => `${f.id}=${f.label}`).join(', ');

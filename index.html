@@ -66,7 +66,9 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #exportMenu button { display: block; width: 100%; margin: 4px 0; text-align: left; }
 
 /* ---------- stage / pane ---------- */
-#stage { flex: 1; min-height: 0; position: relative; overflow-y: auto; overflow-anchor: none; outline: none; }
+/* overflow-x is spelled out: left to default it computes to auto (because overflow-y is), and iOS Safari
+   then lets the page rubber-band sideways in Scroll layout even though nothing is wider than the screen */
+#stage { flex: 1; min-height: 0; position: relative; overflow-x: hidden; overflow-y: auto; overscroll-behavior-x: none; overflow-anchor: none; outline: none; }
 /* theme-coloured scrollbars, normal width so the thumb is easy to grab (the stage's is hidden while reading) */
 #stage, #searchList, #toc .tbody { scrollbar-color: color-mix(in srgb, var(--muted) 60%, transparent) transparent; }
 #pane { position: relative; width: min(var(--pane-w), calc(100% - 24px)); margin: 16px auto; background: var(--paper); box-shadow: var(--shadow); border-radius: 4px; padding: 48px 56px 56px; min-height: calc(100% - 32px); }
