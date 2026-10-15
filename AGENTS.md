@@ -7,7 +7,7 @@ RTF support: `Reflow.fromRTF(src)` converts RTF to plain text (bold/italic as `*
 plus `hints` (line index -> `heading` | `center` | `verse`) that `Reflow.analyze(text, { hints })`
 honours. The UI routes files ending `.rtf` or starting `{\rtf` through it.
 
-Recent files: each opened file's source is kept in IndexedDB (8 newest, ≤30M chars, storage marked
+Recent files: each opened file's source is kept in IndexedDB (one per file name, so an edited file replaces its old copy and keeps its position; 8 newest, ≤30M chars, storage marked
 persistent via `navigator.storage.persist()`). The book open when the page was left reopens on return
 (`reflower.lastOpen` in localStorage, cleared by Home; `restoreLast()`); leaving from Home stays Home.
 
@@ -45,7 +45,7 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   Auto-hiding bars (`body.autohide` from JS `autoMQ`: compact width or a short touch screen) float the
   toolbar/scrub bar over the text; `&chrome=1` taps through hide/show and checks page breaks don't move.
   `&swipe=1` drives synthetic touch drags (follow, spring back, flick, edge margin, vertical);
-  `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry);
+  `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry; Home goes back `depth` entries, all the way Home) and Recent's one-entry-per-name;
   `&restore=1` reloads with a book open (must reopen at the same page) and after Home (must stay Home).
 - Use a fresh `--user-data-dir` per run (e.g. `"$TEMP/rf-$RANDOM"`) when testing edits: a reused
   profile can serve a cached `index.html` from the Python server.

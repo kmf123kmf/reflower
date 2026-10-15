@@ -1504,6 +1504,7 @@ const Reflow = (() => {
   // `src` is the file as decoded (RTF still raw): Recent keeps it, and its hash keys the saved position.
   function openSource(src, name, fromHistory = false) {
     const key = hashText(src);
+    adoptPosition(key, name);
     if (/\.rtf$/i.test(name) || /^\s*\{\\rtf/.test(src.slice(0, 32))) {
       const r = Reflow.fromRTF(src);
       loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF', fromHistory });
@@ -1522,25 +1523,32 @@ const Reflow = (() => {
     const a = savedAnchor();
     if (a) { relayout(a); held = a; }
     syncAutoHide(); setChrome(false); // a newly opened book starts with the bars showing
-    if (!extra.fromHistory) history.pushState({ book: doc.key }, ''); // so Back returns Home (see "history")
+    if (!extra.fromHistory) { // so Back returns to the previous book or Home (see "history")
+      const st = history.state && history.state.book ? history.state : null;
+      if (st && st.book === doc.key) history.replaceState(st, ''); // same book reopened: no new step
+      else history.pushState({ book: doc.key, name, depth: (st ? st.depth || 1 : 0) + 1 }, '');
+    }
     stage.focus();
   }
 
   /* ---------------- history ---------------- */
   // Each opened book gets a history entry (no URL change), so the browser's Back, including Safari's
   // edge swipe, returns to Home instead of leaving the site, and Forward reopens the book from Recent.
-  // Home in the app goes Back too, keeping the two in step.
+  // Books opened one after another stack up, so Back steps through them. Each entry's `depth` counts
+  // the book entries down to Home, and Home in the app goes back that far, keeping the two in step.
   function leaveBook() {
     if (!doc) return;
-    if (history.state && history.state.book) history.back(); else goHome();
+    if (history.state && history.state.book) history.go(-(history.state.depth || 1)); else goHome();
   }
   window.addEventListener('popstate', async e => {
     const key = e.state && e.state.book;
     if (!key) { if (doc) goHome(); return; }
     if (doc && doc.key === key) return;
     let r = null;
-    try { r = await Recent.get(key); } catch { /* no IndexedDB */ }
-    if (r) openSource(r.src, r.name, true);
+    try { // that copy, else the edited copy that replaced it in Recent (same name)
+      r = await Recent.get(key) || (await Recent.list()).find(x => x.name === e.state.name);
+    } catch { /* no IndexedDB */ }
+    if (r) { openSource(r.src, r.name, true); if (r.key !== key) history.replaceState({ ...e.state, book: r.key }, ''); }
     else { history.replaceState(null, ''); if (doc) goHome(); } // not kept (too big, private window): Home
   });
   // Coming back to the page reopens the book that was open when it was left (LAST_KEY, cleared by
@@ -1607,6 +1615,16 @@ const Reflow = (() => {
     }
     return { caret, line: startLine, el, src: srcOf(el, caret) };
   }
+  // A file reopened after being edited hashes to a new key; Recent replaces its old copy (same name),
+  // so the reading position moves over from the newest entry under that name.
+  function adoptPosition(key, name) {
+    const all = loadPositions();
+    if (all[key]) return;
+    const prev = Object.keys(all).filter(k => all[k].name === name).sort((x, y) => all[y].t - all[x].t)[0];
+    if (!prev) return;
+    all[key] = all[prev]; delete all[prev];
+    try { localStorage.setItem(POS_KEY, JSON.stringify(all)); } catch { /* quota: skip */ }
+  }
   window.addEventListener('pagehide', savePosNow);
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosNow(); });
 
@@ -1643,7 +1661,8 @@ const Reflow = (() => {
       async add(rec) {
         try {
           if (rec.src.length > MAX_CHARS) return;
-          await tx('readwrite', s => s.put({ ...rec, t: Date.now() }));
+          const same = (await list()).filter(r => r.name === rec.name && r.key !== rec.key); // an edited copy
+          await tx('readwrite', s => { same.forEach(r => s.delete(r.key)); return s.put({ ...rec, t: Date.now() }); });
           persist();
           const old = (await list()).slice(MAX);
           if (old.length) await tx('readwrite', s => old.forEach(r => s.delete(r.key)));

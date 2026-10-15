@@ -191,6 +191,28 @@ f.addEventListener('load', async () => {
       out.push(`Forward -> ${app.state.doc ? 'reopened ' + app.state.doc.name : 'STILL HOME'}`);
       w.history.back(); await wait(500);
       out.push(`Back -> ${app.state.doc ? 'STILL IN BOOK' : 'home'}`);
+      // books opened over a book (another file, then an edited copy of it) stack up for Back, Home goes
+      // all the way Home, and the edited copy replaces the older one in Recent (same name)
+      const drop = async (text, fname) => {
+        const dt = new w.DataTransfer(); dt.items.add(new w.File([text], fname));
+        w.dispatchEvent(new w.DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        for (let n = 0; n < 50 && !(app.state.doc && app.state.doc.text.startsWith(text.slice(0, 40))); n++) await wait(20);
+      };
+      const txt = await blob.text(), len0 = w.history.length;
+      await drop(txt, name.split('/').pop()); await drop('Other book.\n\nA second file.\n', 'other.txt');
+      await drop('Edited.\n\n' + txt, name.split('/').pop()); await wait(300);
+      await drop('Edited.\n\n' + txt, name.split('/').pop()); await wait(300); // same book again: no new step
+      out.push(`3 books opened over each other (+ one reopened): history length ${w.history.length} (was ${len0}, want +2), depth ${w.history.state.depth}`);
+      w.history.back(); await wait(800);
+      out.push(`Back -> ${app.state.doc ? app.state.doc.name : 'HOME'} (want other.txt)`);
+      d.getElementById('btnHome').click(); await wait(800);
+      out.push(`then Home button -> ${app.state.doc ? 'STILL IN BOOK ' + app.state.doc.name : 'home'}; state ${JSON.stringify(w.history.state)}`);
+      w.history.forward(); await wait(800);
+      for (let n = 0; n < 100 && !app.state.doc; n++) await wait(20);
+      out.push(`Forward -> ${app.state.doc ? app.state.doc.name : "HOME"} (want gutenberg_72.txt); state ${JSON.stringify(w.history.state)}`);
+      const recs = await new Promise(r => { const o = w.indexedDB.open('reflower', 1); o.onsuccess = () => { const g = o.result.transaction('files').objectStore('files').getAll(); g.onsuccess = () => r(g.result); }; });
+      const names = recs.map(x => x.name), dup = names.filter((x, i) => names.indexOf(x) !== i);
+      out.push(`Recent: ${names.join(', ')}${dup.length ? ' - DUPLICATE ' + dup.join(', ') : ''}`);
     }
     if (q.get('restore')) { // &restore=1: leaving with a book open reopens it on return; leaving from Home doesn't
       const wait = ms => new Promise(r => setTimeout(r, ms));
