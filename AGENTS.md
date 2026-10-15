@@ -7,6 +7,10 @@ RTF support: `Reflow.fromRTF(src)` converts RTF to plain text (bold/italic as `*
 plus `hints` (line index -> `heading` | `center` | `verse`) that `Reflow.analyze(text, { hints })`
 honours. The UI routes files ending `.rtf` or starting `{\rtf` through it.
 
+Recent files: each opened file's source is kept in IndexedDB (8 newest, ≤30M chars, storage marked
+persistent via `navigator.storage.persist()`). The book open when the page was left reopens on return
+(`reflower.lastOpen` in localStorage, cleared by Home; `restoreLast()`); leaving from Home stays Home.
+
 Search (`/` or the Search button) is a literal, case-insensitive find over the rendered text:
 `Reflow.searchFold` / `Reflow.searchPattern` (engine, unit-tested) build the matcher; the UI scans
 `doc.blocks` in ~8 ms slices and marks matches with the CSS Custom Highlight API (no DOM changes).
@@ -41,7 +45,8 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   Auto-hiding bars (`body.autohide` from JS `autoMQ`: compact width or a short touch screen) float the
   toolbar/scrub bar over the text; `&chrome=1` taps through hide/show and checks page breaks don't move.
   `&swipe=1` drives synthetic touch drags (follow, spring back, flick, edge margin, vertical);
-  `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry).
+  `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry);
+  `&restore=1` reloads with a book open (must reopen at the same page) and after Home (must stay Home).
 - Use a fresh `--user-data-dir` per run (e.g. `"$TEMP/rf-$RANDOM"`) when testing edits: a reused
   profile can serve a cached `index.html` from the Python server.
 - Screenshots: `--window-size=1400,900 --screenshot=out.png "http://127.0.0.1:8765/tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=1&debug=1"`.

@@ -1504,6 +1504,7 @@ const Reflow = (() => {
       loadText(r.text, name, { key, hints: r.hints, metaTitle: r.title, source: 'RTF', fromHistory });
     } else loadText(src, name, { key, fromHistory });
     Recent.add({ key, name, src, title: doc.metaTitle || doc.res.stats.title || '' });
+    try { localStorage.setItem(LAST_KEY, key); } catch { /* storage unavailable */ }
   }
 
   function loadText(text, name, extra = {}) {
@@ -1537,8 +1538,24 @@ const Reflow = (() => {
     if (r) openSource(r.src, r.name, true);
     else { history.replaceState(null, ''); if (doc) goHome(); } // not kept (too big, private window): Home
   });
-  // A reload keeps history.state, but nothing reopens automatically: start from Home.
-  if (history.state && history.state.book) history.replaceState(null, '');
+  // Coming back to the page reopens the book that was open when it was left (LAST_KEY, cleared by
+  // Home), from its Recent copy. A reload keeps history.state: if it is that book's entry it is
+  // reused, so reloading doesn't stack up duplicate entries; any other stale book entry is cleared.
+  const LAST_KEY = 'reflower.lastOpen';
+  async function restoreLast() {
+    const st = history.state && history.state.book;
+    let key = null, r = null;
+    try { key = localStorage.getItem(LAST_KEY); } catch { /* storage unavailable */ }
+    if (st && st !== key) history.replaceState(null, '');
+    if (!key) return;
+    try { r = await Recent.get(key); } catch { /* no IndexedDB */ }
+    if (doc) return; // something was opened meanwhile (drop, paste, Recent click)
+    if (r) openSource(r.src, r.name, st === key);
+    else {
+      try { localStorage.removeItem(LAST_KEY); } catch { /* storage unavailable */ }
+      if (st) history.replaceState(null, ''); // not kept (too big, evicted): stay Home
+    }
+  }
 
   function hashText(t) { // FNV-1a plus length, so collisions are vanishingly rare
     let h = 0x811c9dc5;
@@ -1589,7 +1606,10 @@ const Reflow = (() => {
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosNow(); });
 
   /* ---------------- recent files (IndexedDB copy of the source text) ---------------- */
-  // Nothing reopens automatically: the start screen lists recent files and the reader picks one.
+  // The start screen lists recent files; the one open when the page was left reopens by itself
+  // (restoreLast). Storage is asked to be persistent once, so the browser won't evict it under disk
+  // pressure (Chrome decides silently; Firefox asks). Safari still drops it after 7 days unvisited,
+  // unless the page was added to the Home Screen.
   const Recent = (() => {
     const MAX = 8, MAX_CHARS = 30e6;
     let dbp = null;
@@ -1606,6 +1626,12 @@ const Reflow = (() => {
       });
     };
     const list = async () => ((await tx('readonly', s => s.getAll())) || []).sort((a, b) => b.t - a.t);
+    let asked = false;
+    const persist = async () => {
+      if (asked || !navigator.storage || !navigator.storage.persist) return;
+      asked = true;
+      try { if (!(await navigator.storage.persisted())) await navigator.storage.persist(); } catch { /* not supported here */ }
+    };
     return {
       list,
       get: key => tx('readonly', s => s.get(key)),
@@ -1613,6 +1639,7 @@ const Reflow = (() => {
         try {
           if (rec.src.length > MAX_CHARS) return;
           await tx('readwrite', s => s.put({ ...rec, t: Date.now() }));
+          persist();
           const old = (await list()).slice(MAX);
           if (old.length) await tx('readwrite', s => old.forEach(r => s.delete(r.key)));
         } catch { /* storage unavailable (e.g. private window): Recent just stays empty */ }
@@ -1711,6 +1738,7 @@ const Reflow = (() => {
   function goHome() {
     if (!doc) return;
     savePosNow();
+    try { localStorage.removeItem(LAST_KEY); } catch { /* storage unavailable */ } // left at Home: come back to Home
     resetSearch();
     clearTimeout(progTimer); progTimer = 0;
     doc = null; held = null; page = 0; pages = 1;
@@ -2579,6 +2607,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   syncAutoHide();
   relayout(null);
   showRecent();
+  restoreLast();
   window.ReflowerApp = { loadText, setLayout, setView, setPage, resolveFonts, get fonts() { buildFontMenu(); return fontMenu; }, get state() { return { page, pages, view, layout: S.layout, doc, chromeHidden, search: { q: SR.q, total: SR.total, shown: SR.hits.length, cur: SR.cur, done: SR.done } }; } };
 })();
 </script>

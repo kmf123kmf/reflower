@@ -11,6 +11,7 @@
 // Headless: chrome --headless --screenshot=x.png --window-size=1400,900 <url>   or  --dump-dom to read #out
 // Phones: add &w=390&h=844 (see below); every run prints a "fit" line flagging anything cut off sideways.
 // &fonts=1 lists the font menu (here and simulated macOS / Linux). &toc=<n> clicks the nth Contents entry. &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
+// &restore=1 reloads the app with a book open (should reopen at the same page) and after Home (should stay Home).
 // &search=<text>[&next=N] types into the search panel and presses Enter N times. Add Chrome's
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
@@ -18,7 +19,9 @@ const f = document.getElementById('f');
 // &w=390&h=844 sizes the app's frame: headless Chrome will not make a window narrower than 500px,
 // so phone widths are tested this way (the app's media queries follow the frame).
 if (q.get('w')) Object.assign(f.style, { width: q.get('w') + 'px', height: (q.get('h') || 800) + 'px' });
+let reloading = false; // &restore=1 reloads the frame itself
 f.addEventListener('load', async () => {
+  if (reloading) return;
   const w = f.contentWindow, app = w.ReflowerApp, out = [];
   try {
     const name = q.get('sample') || 'gutenberg_72.txt';
@@ -27,7 +30,8 @@ f.addEventListener('load', async () => {
     const dt = new w.DataTransfer();
     dt.items.add(new w.File([blob], name.split('/').pop()));
     w.dispatchEvent(new w.DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-    for (let n = 0; n < 50 && !app.state.doc; n++) await new Promise(r => setTimeout(r, 20));
+    // (by name: the book open when the app was last left may reopen first)
+    for (let n = 0; n < 50 && !(app.state.doc && app.state.doc.name === name.split('/').pop()); n++) await new Promise(r => setTimeout(r, 20));
     if (q.get('debug')) w.document.getElementById('btnDebug').click();
     for (const l of ['page', 'spread', 'scroll']) {
       app.setLayout(l);
@@ -182,6 +186,25 @@ f.addEventListener('load', async () => {
       out.push(`Forward -> ${app.state.doc ? 'reopened ' + app.state.doc.name : 'STILL HOME'}`);
       w.history.back(); await wait(500);
       out.push(`Back -> ${app.state.doc ? 'STILL IN BOOK' : 'home'}`);
+    }
+    if (q.get('restore')) { // &restore=1: leaving with a book open reopens it on return; leaving from Home doesn't
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const reload = async () => {
+        reloading = true;
+        const loaded = new Promise(r => f.addEventListener('load', r, { once: true }));
+        f.contentWindow.location.reload(); await loaded; reloading = false;
+        const a = f.contentWindow.ReflowerApp;
+        for (let n = 0; n < 250 && !a.state.doc; n++) await wait(20); // IndexedDB runs in real time, not virtual
+        return f.contentWindow;
+      };
+      app.setLayout('page'); app.setPage(3, false); await wait(600); // positions save after 400 ms
+      const pg = app.state.page;
+      let w2 = await reload(), st = w2.ReflowerApp.state;
+      out.push(`restore: reload while reading -> ${st.doc ? `reopened ${st.doc.name} at page ${st.page} (was ${pg})` : 'HOME (NOT RESTORED)'}; state ${JSON.stringify(w2.history.state)}, history length ${w2.history.length}`);
+      if (st.doc) { w2.document.getElementById('btnHome').click(); await wait(500); }
+      w2 = await reload(); st = w2.ReflowerApp.state;
+      out.push(`restore: reload after Home -> ${st.doc ? 'REOPENED ' + st.doc.name : 'home'}`);
+      out.push(`restore: storage persisted = ${await w2.navigator.storage.persisted()}`);
     }
     if (q.get('click')) { // &click=id[,id…] clicks toolbar/panel controls in turn, then reports what is open
       const d = w.document;
