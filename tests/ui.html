@@ -72,7 +72,7 @@ f.addEventListener('load', async () => {
       const sel = w.document.getElementById('setFont'), pick = [...sel.options].find(o => o.value !== sel.value);
       out.push(`menu: ${[...sel.options].map(o => o.textContent).join(' | ')}; selected ${sel.value}`);
       sel.value = pick.value; sel.dispatchEvent(new w.Event('input', { bubbles: true }));
-      out.push(`picked ${pick.textContent} -> --font ${getComputedStyle(w.document.documentElement).getPropertyValue('--font')}`);
+      out.push(`picked ${pick.textContent} -> --font ${getComputedStyle(w.document.documentElement).getPropertyValue('--font')}; menu shown in ${getComputedStyle(sel).fontFamily}; options in ${[...sel.options].slice(0, 3).map(o => getComputedStyle(o).fontFamily).join(' | ')}`);
     }
     if (q.get('toc')) { // click the Nth Contents entry
       const d = w.document, link = d.querySelectorAll('#tocList a')[+q.get('toc')];

@@ -59,6 +59,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 /* dropdowns in the theme's colours, open list included (the browser draws that, on a light
    background unless told otherwise, which left the dark theme's light text unreadable) */
 .panel select { background: var(--paper); }
+#setFont optgroup { font-family: "Segoe UI", system-ui, sans-serif; } /* each option shows in its own font (where the browser draws the list), the closed menu in the font in use */
 .panel option, .panel optgroup { background: var(--paper); color: var(--fg); }
 .panel h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 #settings { right: 10px; }
@@ -1410,7 +1411,7 @@ const Reflow = (() => {
     fontMenu = resolveFonts();
     $('#setFont').innerHTML = ['Serif', 'Sans-serif', 'Other'].map(g => {
       const fs = fontMenu.filter(f => f.group === g);
-      return fs.length ? `<optgroup label="${g}">${fs.map(f => `<option value="${f.id}">${escHTML(f.label)}</option>`).join('')}</optgroup>` : '';
+      return fs.length ? `<optgroup label="${g}">${fs.map(f => `<option value="${f.id}" style="font-family: ${escHTML(f.stack)}">${escHTML(f.label)}</option>`).join('')}</optgroup>` : '';
     }).join('');
     if (fontOf(S.font).stack !== before && doc) { const a = holdAnchor(); applySettings(); relayout(a); } else applySettings();
   }
@@ -1453,7 +1454,7 @@ const Reflow = (() => {
     content.classList.toggle('indent', S.para === 'indent');
     document.body.classList.toggle('chapter-breaks', !!S.chapterBreaks);
     document.body.classList.toggle('has-doc', !!doc);
-    $('#setTheme').value = S.theme; if (fontMenu) $('#setFont').value = (fontMenu.find(f => f.label === fontOf(S.font).label) || {}).id || ''; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
+    $('#setTheme').value = S.theme; if (fontMenu) $('#setFont').value = (fontMenu.find(f => f.label === fontOf(S.font).label) || {}).id || ''; $('#setFont').style.fontFamily = fontOf(S.font).stack; $('#setSize').value = S.fs; $('#setLh').value = S.lh;
     $('#setAlign').value = S.align; $('#setPara').value = S.para; $('#setSmart').checked = S.smart; $('#setChapter').checked = S.chapterBreaks;
     $('#setHeadings').checked = S.headings; $('#setChapter').disabled = !S.headings; // no headings, no chapter breaks
     // Raw always scrolls: show that, and lock the layout buttons (the saved layout is kept for Reflowed)
