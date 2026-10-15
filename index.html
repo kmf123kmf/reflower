@@ -2354,13 +2354,20 @@ const Reflow = (() => {
     const inp = $('#searchInput');
     inp.focus(); inp.select();
   }
+  // Scrolling, the reading point (e.g. the match just shown) keeps its height on screen: on phones
+  // the sheet above it goes away, and moving it up to the top edge would put it under a floating toolbar.
   function closeSearch(keepPlace = true) {
     if (!searchOpen()) return;
+    const a = keepPlace ? holdAnchor() : null, r0 = a && !isPaged() ? anchorRect(a) : null;
     $('#search').classList.remove('open');
     $('#search .sbody').inert = true; $('#searchTab').setAttribute('aria-expanded', 'false');
     document.body.classList.remove('search-open');
     if (HL) { CSS.highlights.delete('search'); CSS.highlights.delete('search-cur'); }
-    if (keepPlace) { relayout(holdAnchor()); stage.focus(); }
+    if (!keepPlace) return;
+    relayout(a);
+    const r1 = r0 && anchorRect(a);
+    if (r1) { stage.scrollTop += r1.top - r0.top; ownScrollTop = stage.scrollTop; updateIndicator(); }
+    stage.focus();
   }
   function resetSearch() { // new document or Home: start over (the caller lays the page out afresh)
     closeSearch(false);
@@ -2386,14 +2393,16 @@ const Reflow = (() => {
   $('#searchNext').addEventListener('click', () => { flushSearch(); searchGo(1); });
   $('#searchPrev').addEventListener('click', () => { flushSearch(); searchGo(-1); });
   // Phones: a tap shows the match below the sheet; a second tap on the same row within half a second
-  // closes the sheet, keeping the match on screen (detected here: iOS doesn't reliably fire dblclick).
+  // closes the sheet, keeping the match on screen (detected here: iOS doesn't reliably fire dblclick),
+  // and hides auto-hiding bars too: that's the way back to reading, and a bar shown over the page
+  // could cover the match (e.g. on the first line of a page).
   let lastTap = { k: -1, t: 0 };
   $('#searchList').addEventListener('click', e => {
     const b = e.target.closest('.hit');
     if (!b) return;
     const k = +b.dataset.k, now = Date.now();
     if (compactMQ.matches) {
-      if (k === lastTap.k && now - lastTap.t < 500) { lastTap = { k: -1, t: 0 }; closeSearch(); return; }
+      if (k === lastTap.k && now - lastTap.t < 500) { lastTap = { k: -1, t: 0 }; closeSearch(); setChrome(true); return; }
       lastTap = { k, t: now };
       if (document.activeElement === $('#searchInput')) $('#searchInput').blur(); // drop the keyboard so the page shows
     }

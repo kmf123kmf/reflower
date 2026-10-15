@@ -110,7 +110,11 @@ f.addEventListener('load', async () => {
           d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
           d.getAnimations().forEach(a => a.finish());
           const r = range && range.getClientRects()[0], st = d.getElementById('stage').getBoundingClientRect(), v = d.getElementById('viewport').getBoundingClientRect();
-          out.push(`double tap: panel ${app.state.search && d.getElementById('search').classList.contains('open') ? 'STILL OPEN' : 'closed'}; match ${r && r.top >= Math.max(st.top, v.top) && r.bottom <= Math.min(st.bottom, v.bottom) && r.left >= v.left - 1 && r.right <= v.right + 1 ? 'still visible' : 'NOT VISIBLE'} (y=${r ? Math.round(r.top) : '?'}; text area y ${Math.round(Math.max(st.top, v.top))}-${Math.round(Math.min(st.bottom, v.bottom))})`);
+          // floating bars (auto-hide) cover the text where they show
+          const bar = id => { const el = d.getElementById(id); return el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && +getComputedStyle(el).opacity > 0.1 ? el.getBoundingClientRect() : null; };
+          const tb = bar('toolbar'), sb = bar('scrubbar');
+          const top = Math.max(st.top, v.top, tb && tb.bottom <= st.top + st.height / 2 ? tb.bottom : -1e9), bottom = Math.min(st.bottom, v.bottom, sb && sb.top >= st.top + st.height / 2 ? sb.top : 1e9);
+          out.push(`double tap: panel ${app.state.search && d.getElementById('search').classList.contains('open') ? 'STILL OPEN' : 'closed'}; match ${r && r.top >= top - 2 && r.bottom <= bottom + 2 && r.left >= v.left - 1 && r.right <= v.right + 1 ? 'still visible' : 'NOT VISIBLE'} (y=${r ? Math.round(r.top) : '?'}; uncovered text area y ${Math.round(top)}-${Math.round(bottom)})`);
         }
       }
       await new Promise(r => setTimeout(r, 400)); // let the page turn finish
