@@ -31,7 +31,7 @@ Search (`/` or the Search button) is a literal, case-insensitive find over the r
 ## Verification (no Node on this machine; use Python + headless Chrome)
 ```
 python tests/make_samples.py
-python -m http.server 8765 --bind 127.0.0.1        # from repo root, keep running
+python tests/serve.py                              # keep running (no-cache static server + /__hold)
 CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
 "$CHROME" --headless=new --disable-gpu --user-data-dir="$TEMP/reflower-chrome" --virtual-time-budget=10000 \
   --dump-dom "http://127.0.0.1:8765/tests/test.html" | grep -E "FAIL|PASSED|ERROR"
@@ -48,5 +48,11 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry; Home goes back `depth` entries, all the way Home) and Recent's one-entry-per-name;
   `&restore=1` reloads with a book open (must reopen at the same page) and after Home (must stay Home).
 - Use a fresh `--user-data-dir` per run (e.g. `"$TEMP/rf-$RANDOM"`) when testing edits: a reused
-  profile can serve a cached `index.html` from the Python server.
+  profile can serve a cached `index.html` (`tests/serve.py` sends no-store; plain `http.server` doesn't).
+- `--virtual-time-budget` runs render no frames: `requestAnimationFrame` and `ResizeObserver` never fire,
+  so anything behind `scheduleRelayout()` is untested that way. For those, drop the budget and add
+  `&hold=/__hold` (served slowly by `tests/serve.py`, so `--dump-dom` waits in real time), e.g.
+  `ui.html?sample=gutenberg_72.txt&hold=/__hold&inset=34&w=430&h=932`: `&inset=N` shrinks the page area
+  with no resize event (as iOS home-screen apps do when applying safe-area insets) and checks the paged
+  layout re-fits instead of clipping its bottom line.
 - Screenshots: `--window-size=1400,900 --screenshot=out.png "http://127.0.0.1:8765/tests/ui.html?sample=gutenberg_72.txt&layout=spread&page=1&debug=1"`.

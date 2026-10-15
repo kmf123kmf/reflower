@@ -1836,6 +1836,7 @@ const Reflow = (() => {
     content.style.width = content.style.height = content.style.columnCount = content.style.columnGap = content.style.columnFill = content.style.transform = '';
     if (paged) {
       const vw = Math.floor(viewport.clientWidth), vh = Math.floor(viewport.clientHeight);
+      laidOut = { w: vw, h: vh };
       Object.assign(content.style, { width: vw + 'px', height: vh + 'px', columnCount: layoutNow() === 'spread' ? 2 : 1, columnGap: GAP + 'px', columnFill: 'auto' });
       stride = vw + GAP;
       const sent = $('#endSentinel');
@@ -2122,6 +2123,15 @@ const Reflow = (() => {
     if (isPaged()) setPage(pageOfRect(r));
     else stage.scrollTop += r.top - stage.getBoundingClientRect().top - y;
   }
+
+  // Paged layouts size the column strip to the page area in px, so it must be redone whenever that
+  // area changes size, not only on window resize. iOS home-screen apps, for one, apply the safe-area
+  // insets (home indicator) after the first layout with no resize event; the strip then stayed taller
+  // than the page and its bottom line was clipped under the footer.
+  let laidOut = { w: 0, h: 0 };
+  new ResizeObserver(() => {
+    if (isPaged() && (Math.floor(viewport.clientWidth) !== laidOut.w || Math.floor(viewport.clientHeight) !== laidOut.h)) scheduleRelayout();
+  }).observe(viewport);
 
   let rafId = 0, pendingAnchor = null;
   function scheduleRelayout(anchor) {

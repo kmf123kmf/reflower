@@ -16,6 +16,10 @@
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
 const f = document.getElementById('f');
+// &hold=<url>: with --virtual-time-budget headless Chrome renders no frames (no requestAnimationFrame, no
+// ResizeObserver). To test those, run without the budget and point this at a URL the server answers
+// slowly: --dump-dom then waits for it in real time while the checks run (see AGENTS.md).
+if (q.get('hold')) document.body.appendChild(Object.assign(new Image(), { src: q.get('hold'), hidden: true }));
 // &w=390&h=844 sizes the app's frame: headless Chrome will not make a window narrower than 500px,
 // so phone widths are tested this way (the app's media queries follow the frame).
 if (q.get('w')) Object.assign(f.style, { width: q.get('w') + 'px', height: (q.get('h') || 800) + 'px' });
@@ -232,6 +236,21 @@ f.addEventListener('load', async () => {
       w2 = await reload(); st = w2.ReflowerApp.state;
       out.push(`restore: reload after Home -> ${st.doc ? 'REOPENED ' + st.doc.name : 'home'}`);
       out.push(`restore: storage persisted = ${await w2.navigator.storage.persisted()}`);
+    }
+    if (q.get('inset')) { // &inset=34: the space for the page changes with no window resize event (as when iOS
+      // applies the home-screen app's safe-area insets late). The page must re-fit, or its last lines are clipped.
+      const d = w.document, ct = d.getElementById('content'), vp = d.getElementById('viewport');
+      const report = label => { const lines = [...ct.querySelectorAll('p, h2, .vl, div.center, div.byline')].flatMap(el => [...el.getClientRects()]),
+          vr = vp.getBoundingClientRect(), shown = lines.filter(r => r.left >= vr.left - 1 && r.right <= vr.right + 1),
+          cut = shown.filter(r => r.bottom > vr.bottom + 0.5 && r.top < vr.bottom);
+        out.push(`${label}: page laid out ${parseFloat(ct.style.height)}px tall in a ${Math.round(vr.height)}px space; ${cut.length ? cut.length + ' line(s) CUT OFF at the bottom' : 'no lines cut off'}`); };
+      app.setLayout('page'); app.setPage(1, false); await new Promise(r => setTimeout(r, 100));
+      report('before');
+      d.getElementById('stage').style.paddingBottom = q.get('inset') + 'px';
+      await new Promise(r => setTimeout(r, 300)); d.getAnimations().forEach(a => a.finish());
+      report(`after the space shrank by ${q.get('inset')}px`);
+      const raf = await Promise.race([new Promise(r => w.requestAnimationFrame(() => r('yes'))), new Promise(r => setTimeout(() => r('NO: add &hold, run without --virtual-time-budget'), 500))]);
+      out.push(`frames rendering: ${raf}`);
     }
     if (q.get('click')) { // &click=id[,id…] clicks toolbar/panel controls in turn, then reports what is open
       const d = w.document;
