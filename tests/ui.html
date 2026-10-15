@@ -64,7 +64,8 @@ f.addEventListener('load', async () => {
     if (q.get('fonts')) { // the font menu here, and as it would be with typical macOS / Linux fonts
       const menu = fs => fs.map(f => `${f.id}=${f.label}`).join(', ');
       out.push(`fonts here: ${menu(app.fonts)}; in use: ${getComputedStyle(w.document.documentElement).getPropertyValue('--font')}`);
-      const sim = { macOS: 'Iowan Old Style,Charter,Palatino,Georgia,Gill Sans,Avenir Next,Lucida Grande,Helvetica Neue,Verdana,Trebuchet MS,Menlo,Geneva',
+      const sim = { macOS: 'Iowan Old Style,Charter,Palatino,Georgia,San Francisco,Gill Sans,Avenir Next,Lucida Grande,Helvetica Neue,Verdana,Trebuchet MS,Menlo,Geneva',
+        iPhone: 'Iowan Old Style,Charter,Palatino,Georgia,San Francisco,Gill Sans,Avenir Next,Helvetica Neue,Verdana,Trebuchet MS,Menlo',
         'Ubuntu': 'Noto Serif,Noto Sans,Noto Sans Mono,DejaVu Serif,DejaVu Sans,DejaVu Sans Mono,Liberation Serif,Liberation Sans,Liberation Mono,P052,Ubuntu',
         'Fedora + LibreOffice': 'Noto Serif,Noto Sans,Noto Sans Mono,DejaVu Sans,Liberation Serif,Carlito,Cantarell' };
       for (const [os, list] of Object.entries(sim)) { const has = new Set(list.split(',')); out.push(`fonts ${os}: ${menu(app.resolveFonts(f => has.has(f)))}`); }

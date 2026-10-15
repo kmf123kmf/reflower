@@ -1347,11 +1347,13 @@ const Reflow = (() => {
   // installed, so the same menu suits Windows, macOS and Linux. A choice that finds none of its faces
   // is left out unless it has an `always` label (a generic family), and so is one that lands on a face
   // an earlier choice already uses. Choice ids are what settings store, so they never change.
+  // Some faces can only be asked for by keyword (FACE_CSS): Apple's San Francisco, the iPhone's
+  // reading font, is hidden from lookups by name.
   const FONT_CHOICES = [
     { id: 'serif', group: 'Serif', faces: ['Constantia', 'Iowan Old Style', 'Noto Serif', 'Georgia'], generic: 'serif', always: 'Serif' },
     { id: 'modern', group: 'Serif', faces: ['Sitka Text', 'Charter', 'DejaVu Serif', 'Liberation Serif'], generic: 'serif' },
     { id: 'book', group: 'Serif', faces: ['Palatino Linotype', 'Palatino', 'Book Antiqua', 'TeX Gyre Pagella', 'P052', 'URW Palladio L'], generic: 'serif' },
-    { id: 'sans', group: 'Sans-serif', faces: ['Segoe UI'], generic: 'system-ui, sans-serif', always: 'System UI' },
+    { id: 'sans', group: 'Sans-serif', faces: ['Segoe UI', 'San Francisco'], generic: 'system-ui, sans-serif', always: 'System UI' },
     { id: 'candara', group: 'Sans-serif', faces: ['Candara', 'Gill Sans'], generic: 'sans-serif' },
     { id: 'corbel', group: 'Sans-serif', faces: ['Corbel', 'Avenir Next', 'Lucida Grande'], generic: 'sans-serif' },
     { id: 'calibri', group: 'Sans-serif', faces: ['Calibri', 'Carlito', 'Helvetica Neue'], generic: 'sans-serif' },
@@ -1360,6 +1362,8 @@ const Reflow = (() => {
     { id: 'noto', group: 'Sans-serif', faces: ['Noto Sans', 'Open Sans'], generic: 'sans-serif' },
     { id: 'mono', group: 'Other', faces: ['Consolas', 'Cascadia Mono', 'Menlo', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Liberation Mono'], generic: 'monospace', always: 'Monospace' },
   ];
+  const FACE_CSS = { 'San Francisco': '-apple-system, BlinkMacSystemFont' }; // Safari / Firefox, Chrome on macOS
+  const faceCSS = face => FACE_CSS[face] || `"${face}"`;
   const DEFAULT_FONTS = ['candara', 'serif']; // first one available here (Candara on Windows, Gill Sans on macOS, a serif on Linux)
 
   // Is a font installed? Text set in it measures differently from the generic fallbacks. The first
@@ -1372,7 +1376,7 @@ const Reflow = (() => {
     const width = f => { ctx.font = `72px ${f}`; return ctx.measureText(PROBE).width; };
     const measure = face => {
       if (!ctx) { ctx = document.createElement('canvas').getContext('2d'); base = ['monospace', 'serif', 'sans-serif'].map(g => [g, width(g)]); }
-      return (known[face] = base.some(([g, w]) => width(`"${face}", ${g}`) !== w));
+      return (known[face] = base.some(([g, w]) => width(`${faceCSS(face)}, ${g}`) !== w));
     };
     const installed = face => (face in known ? known[face] : measure(face));
     installed.remeasure = measure;
@@ -1383,7 +1387,7 @@ const Reflow = (() => {
   // A choice as it resolves here, or null if it finds none of its faces (and has no `always`).
   function resolveFont(c, installed = fontInstalled) {
     const face = c.faces.find(installed);
-    return face || c.always ? { id: c.id, group: c.group, label: face || c.always, stack: (face ? `"${face}", ` : '') + c.generic } : null;
+    return face || c.always ? { id: c.id, group: c.group, label: face || c.always, stack: (face ? `${faceCSS(face)}, ` : '') + c.generic } : null;
   }
   function resolveFonts(installed = fontInstalled) { // the menu: each face once, first choice to reach it keeps it
     const used = new Set();
