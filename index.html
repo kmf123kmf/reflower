@@ -26,7 +26,11 @@ html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
 
 /* ---------- toolbar ---------- */
-#toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
+/* sticky (not relative): iOS/iPadOS 26 draw the status bar as translucent glass that blurs and fades
+   whatever is under it, the toolbar included, unless a sticky element with a solid background borders
+   the top edge; then Safari fills the status bar with that colour instead. (It never scrolls: the page
+   scrolls inside #stage, so sticky lays out exactly like relative.) */
+#toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
 #toolbar .spacer { flex: 1; }
 #toolbar button, .panel button, .panel select, #search .sbar button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
 #toolbar button:hover, .panel button:hover, #search .sbar button:hover { background: var(--paper); }
@@ -290,8 +294,9 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
 #chromeHint.show { opacity: .92; }
 
 /* Home-screen apps run edge to edge (viewport-fit=cover) and the status bar lies over the top of the
-   page (on iPad with a fade). Keep the toolbar's controls below it in every layout, not only the phone
-   auto-hide one: last in the sheet so it outlasts the compact `padding` shorthands. 0 in a browser tab. */
+   page. Keep the toolbar's controls below it in every layout, not only the phone auto-hide one: last
+   in the sheet so it outlasts the compact `padding` shorthands. 0 in a browser tab. (The status bar's
+   glass fade is handled by the toolbar being sticky; see "toolbar".) */
 #toolbar { padding-top: max(6px, env(safe-area-inset-top)); }
 #scrubbar { height: calc(34px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); } /* clear of the home indicator */
 </style>
