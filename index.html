@@ -2376,6 +2376,7 @@ const Reflow = (() => {
 
   function openSearch() {
     if (!doc) return;
+    stopFade();
     toggleToc(false);
     setChrome(false);
     if (!searchOpen()) {
@@ -2402,8 +2403,34 @@ const Reflow = (() => {
     const r1 = r0 && anchorRect(a);
     if (r1) { stage.scrollTop += r1.top - r0.top; ownScrollTop = stage.scrollTop; updateIndicator(); }
     stage.focus();
+    if (SR.cur >= 0) fadeHit(SR.hits[SR.cur].range);
+  }
+  // After the panel closes, the match just shown stays lit for a moment and then fades, so the eye
+  // can find it again if the page re-flowed as the panel went. A ::highlight can't be given a CSS
+  // transition, so the rule's colour is stepped from here.
+  const fadeCss = document.head.appendChild(document.createElement('style'));
+  let fadeTimer = 0;
+  function fadeHit(range) {
+    stopFade();
+    if (!HL || !range) return;
+    CSS.highlights.set('search-fade', new Highlight(range));
+    const HOLD = 1500, FADE = 2500, t0 = performance.now();
+    (function step() {
+      const t = performance.now() - t0, p = Math.max(0, (t - HOLD) / FADE);
+      if (p >= 1) { stopFade(); return; }
+      const a = 1 - p * p * (3 - 2 * p), dark = document.documentElement.dataset.theme === 'dark';
+      fadeCss.textContent = `::highlight(search-fade) { background-color: rgba(${dark ? '217, 160, 102' : '255, 150, 50'}, ${a.toFixed(3)});`
+        + (a > .5 ? ` color: ${dark ? '#111' : '#000'}; }` : ' }');
+      fadeTimer = setTimeout(step, t < HOLD ? HOLD - t : 40);
+    })();
+  }
+  function stopFade() {
+    clearTimeout(fadeTimer); fadeTimer = 0;
+    fadeCss.textContent = '';
+    if (HL) CSS.highlights.delete('search-fade');
   }
   function resetSearch() { // new document or Home: start over (the caller lays the page out afresh)
+    stopFade();
     closeSearch(false);
     clearTimeout(searchTimer);
     SR.q = ''; SR.origin = null; SR.pending = 0;

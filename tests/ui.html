@@ -134,6 +134,13 @@ f.addEventListener('load', async () => {
         out.push(`current match ${r && !under && r.left <= v.right && r.right >= v.left && r.top >= top && r.bottom <= bottom ? 'visible' : 'NOT VISIBLE'} (x=${Math.round(r.left)} y=${Math.round(r.top)}; text area x ${Math.round(v.left)}-${Math.round(v.right)} y ${Math.round(top)}-${Math.round(bottom)}; search panel y ${Math.round(sp.top)}-${Math.round(sp.bottom)})`); }
       const row = d.querySelector('#searchList .hit.cur');
       out.push(`current row: ${row ? row.textContent : '(none)'}`);
+      if (q.get('close')) { // &close=1: Escape closes the panel; the match should stay lit, then fade out
+        inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const fade = () => { const h = w.CSS.highlights.get('search-fade'), r = h && [...h][0], m = [...d.head.querySelectorAll('style')].map(s => s.textContent.match(/search-fade\) \{ background-color: ([^;]+)/)).find(Boolean);
+          return h ? `"${r}" ${m ? m[1] : 'no rule'}` : 'gone'; };
+        let t = 0;
+        for (const at of [0, 1000, 2500, 3200, 4500]) { await new Promise(r => setTimeout(r, at - t)); t = at; out.push(`after close +${at}ms: fade ${fade()}`); }
+      }
     }
     if (q.get('chrome')) { // &chrome=1: auto-hiding bars (phones). Taps as a reader would; page breaks must not move.
       const d = w.document, st = d.getElementById('stage'), vp = d.getElementById('viewport');
