@@ -15,8 +15,8 @@ Search (`/` or the Search button) is a literal, case-insensitive find over the r
 `Reflow.searchFold` / `Reflow.searchPattern` (engine, unit-tested) build the matcher; the UI scans
 `doc.blocks` in ~8 ms slices and marks matches with the CSS Custom Highlight API (no DOM changes).
 Search never changes the page's geometry: on wide windows the panel floats over the page and shrinks to
-its find bar (`.mini`, `.low` at the bottom) when it would cover the match; on phones the results are a
-sheet over the page, and picking one shows the page with `#findBar` in the scrub bar's slot.
+its find bar (`.mini`, `.low` at the bottom) when it would cover the match; on phones it is one sheet anchored
+at the bottom (above the keyboard, `--kb`); picking a result folds the list away (`.mini`), leaving the search row.
 
 ## Layout
 - `index.html` – everything. `<script id="reflow-engine">` holds the pure reflow engine
@@ -26,7 +26,7 @@ sheet over the page, and picking one shows the page with `#findBar` in the scrub
 - `tests/test.html` – engine test page (extracts the engine from `index.html`).
 - `tests/ui.html` – UI smoke test / screenshot harness (loads the app in an iframe and opens the
   sample through a simulated file drop, so `.rtf` samples work too). `&search=<text>&next=N` drives
-  the search panel (`&tap=N` taps a result row, `&fb=1` steps with the phone find bar, `&close=1` then closes it and samples the current match's fade-out; every run checks the text never moves and the match isn't covered), `&scrub=<value>&hover=<0..1>` the bottom scrub bar, `&toc=<n>` the Contents, `&fonts=1` lists the
+  the search panel (`&tap=N` taps a result row, `&fb=1` steps with the folded phone search row, unfolds it and drags the list, `&close=1` then closes it and samples the current match's fade-out; every run checks the text never moves and the match isn't covered), `&scrub=<value>&hover=<0..1>` the bottom scrub bar, `&toc=<n>` the Contents, `&fonts=1` lists the
   font menu here and as it would be on typical macOS / Linux font sets; run it with `--force-prefers-reduced-motion` (see the note in the file).
 - `tests/bench.html` – performance benchmark (needs `samples/real/pg1342.txt`).
 - `samples/real/` – optional real Project Gutenberg files for manual checks (not generated).

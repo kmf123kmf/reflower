@@ -13,7 +13,7 @@
 // &fonts=1 lists the font menu (here and simulated macOS / Linux). &toc=<n> clicks the nth Contents entry. &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
 // &restore=1 reloads the app with a book open (should reopen at the same page) and after Home (should stay Home).
 // &search=<text>[&next=N] types into the search panel and presses Enter N times (&tap=N taps a result row,
-// &fb=1 steps with the phone find bar, &close=1 closes search); it checks the text never moves. Add Chrome's
+// &fb=1 steps with the folded phone search row, &close=1 closes search); it checks the text never moves. Add Chrome's
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
 const f = document.getElementById('f');
@@ -110,11 +110,11 @@ f.addEventListener('load', async () => {
       for (let n = 0; n < 500 && !(app.state.search.q && app.state.search.done); n++) await new Promise(r => setTimeout(r, 20));
       const before = app.state.page;
       out.push(`opening search: layout ${same(g0, geo())}, position ${same(w0, where())} [${g0}; ${w0}]`);
-      // what floats over the text where it shows (the panel / sheet, #findBar, floating bars)
+      // what floats over the text where it shows (the panel / sheet, floating bars)
       const shown = el => el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && +getComputedStyle(el).opacity > 0.1;
-      const covers = r => ['search', 'findBar', 'toolbar', 'scrubbar'].map(id => d.getElementById(id)).filter(shown)
+      const covers = r => ['search', 'toolbar', 'scrubbar'].map(id => d.getElementById(id)).filter(shown)
         .filter(el => { const b = el.getBoundingClientRect(); return r.right > b.left && r.left < b.right && r.bottom > b.top && r.top < b.bottom; }).map(el => el.id);
-      const ui = () => `panel ${sp.classList.contains('open') ? 'open' : 'closed'}${['mini', 'low', 'browse'].filter(c => sp.classList.contains(c)).map(c => ' ' + c).join('')}, findBar ${shown(d.getElementById('findBar')) ? 'shown "' + d.getElementById('findBar').textContent.replace(/\s+/g, ' ').trim() + '"' : 'hidden'}, bars ${app.state.chromeHidden ? 'hidden' : 'shown'}`;
+      const ui = () => `panel ${sp.classList.contains('open') ? 'open' : 'closed'}${['mini', 'low', 'high'].filter(c => sp.classList.contains(c)).map(c => ' ' + c).join('')}${shown(d.getElementById('searchCount')) ? ' "' + d.getElementById('searchCount').textContent + '"' : ''} (${Math.round(sp.getBoundingClientRect().top)}-${Math.round(sp.getBoundingClientRect().bottom)}), bars ${app.state.chromeHidden ? 'hidden' : 'shown'}`;
       const matchSeen = () => { const hc = w.CSS.highlights && w.CSS.highlights.get('search-cur'), cr = hc && [...hc][0];
         if (!cr) return 'no current match';
         d.getAnimations().forEach(a => a.finish());
@@ -124,7 +124,7 @@ f.addEventListener('load', async () => {
       for (let n = +(q.get('next') || 1); n > 0; n--) inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       if (q.get('tap')) { // &tap=N then taps the Nth result row, as on a phone (first back to the list if Enter put it away)
         await new Promise(r => setTimeout(r, 300));
-        if (sp.classList.contains('browse')) { d.getElementById('fbList').click(); out.push(`Results -> ${ui()}; keyboard ${d.activeElement === inp ? 'UP' : 'down'}`); }
+        if (sp.classList.contains('mini')) { d.getElementById('searchCount').click(); out.push(`count tapped -> ${ui()}; keyboard ${d.activeElement === inp ? 'UP' : 'down'}`); }
         d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
         out.push(`tapped row ${q.get('tap')}; keyboard ${d.activeElement === inp ? 'STILL UP (input focused)' : 'dismissed'}`);
       }
@@ -135,15 +135,21 @@ f.addEventListener('load', async () => {
       out.push(`ui: ${ui()}`);
       out.push(matchSeen());
       out.push(`while searching: layout ${same(g0, geo())}`);
-      if (q.get('fb')) { // &fb=1: step with #findBar's › (phones)
-        d.getElementById('fbNext').click(); await new Promise(r => setTimeout(r, 400));
-        out.push(`findBar ›: cur=${app.state.search.cur}, page ${app.state.page}; ${ui()}; ${matchSeen()}`);
+      if (q.get('fb')) { // &fb=1: step with the folded search row's › (phones), then tap the field (unfolds the list)
+        d.getElementById('searchNext').click(); await new Promise(r => setTimeout(r, 400));
+        out.push(`row ›: cur=${app.state.search.cur}, page ${app.state.page}; ${ui()}; ${matchSeen()}`);
+        inp.focus(); out.push(`field tapped -> ${ui()}`);
+        const list = d.getElementById('searchList');
+        list.dispatchEvent(new w.Event('touchmove', { bubbles: true }));
+        out.push(`list dragged -> keyboard ${d.activeElement === inp ? 'STILL UP' : 'dropped'}; list ${list.scrollHeight > list.clientHeight + 1 ? 'scrolls (' + list.clientHeight + 'px of ' + list.scrollHeight + ')' : 'fits'}`);
+        list.querySelectorAll('.hit')[list.querySelectorAll('.hit').length - 1].click(); await new Promise(r => setTimeout(r, 400));
+        out.push(`last row tapped -> ${ui()}; ${matchSeen()}`);
       }
       const row = d.querySelector('#searchList .hit.cur');
       out.push(`current row: ${row ? row.textContent : '(none)'}`);
       if (q.get('close')) { // &close=1: Escape closes the panel; nothing moves, and the match stays lit, then fades out
         const w1 = where();
-        if (sp.classList.contains('browse')) d.getElementById('fbDone').click(); // phones: Done on #findBar
+        if (sp.classList.contains('mini') && sp.offsetWidth >= w.innerWidth - 1) d.getElementById('searchClose').click(); // phones: ✕ on the folded row
         else inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         out.push(`closing search: layout ${same(g0, geo())}, position ${same(w1, where())}; ${ui()}`);
         const fade = () => { const h = w.CSS.highlights.get('search-fade'), r = h && [...h][0], m = [...d.head.querySelectorAll('style')].map(s => s.textContent.match(/search-fade\) \{ background-color: ([^;]+)/)).find(Boolean);

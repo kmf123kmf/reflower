@@ -216,6 +216,7 @@ body.has-doc #stage, body.has-doc #scrubbar { margin-left: 28px; margin-right: 2
 #search.mini.low { top: auto; bottom: calc(34px + env(safe-area-inset-bottom)); }
 #search.mini #searchList { display: none; }
 #search .slinks { display: flex; gap: 12px; }
+#search .sbar #searchCount { display: none; border: 0; padding: 4px 2px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; } /* phones, list folded: "3 of 27" */
 #search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
 #searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
 #searchInput:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -261,13 +262,28 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   .panel { left: 8px; right: 8px !important; min-width: 0; max-height: calc(100% - var(--tb-h, 40px) - 8px); overflow-y: auto; }
   .panel input[type="range"] { width: auto; flex: 1; max-width: 180px; }
   #toc, #search { width: 100%; max-width: none; }
-  /* Search is in two steps, neither of which moves the page under it. The query and results are a
-     sheet over the whole page below the toolbar (ending at the on-screen keyboard, --kb). Picking a
-     result (or Enter, or ‹ ›) puts the sheet away and shows the match in the page, with #findBar in the
-     scrub bar's place to step through matches, go back to the list, or finish. */
-  #search { bottom: var(--kb, 0px); border-left: 0; transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
-  #search.open:not(.browse) { opacity: 1; visibility: visible; transition: opacity .15s; }
-  #search.mini #searchList { display: block; }
+  /* Search is one sheet anchored at the bottom (at the on-screen keyboard's top, --kb), like Safari's
+     find in page, and never moves the page under it. Open, the results fill the screen above the search
+     row (input, ‹ ›, ✕), where the thumb and the keyboard are. Picking a result (or Enter, or ‹ ›) folds
+     the list away and leaves just that row, now with the match count, in the same place over the page;
+     tapping the field or the count unfolds it again. */
+  #search { bottom: var(--kb, 0px); border-left: 0; border-top: 1px solid var(--border); transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
+  #search.open { opacity: 1; visibility: visible; transition: opacity .15s; }
+  #search.mini { top: auto; bottom: var(--kb, 0px); box-shadow: var(--shadow); }
+  #search .sbar { order: 3; padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+  html.kb #search .sbar { padding-bottom: 6px; } /* the keyboard is below it, not the home indicator */
+  #search .sstatus { order: 2; padding-top: 6px; }
+  #searchList { order: 1; border-top: 0; border-bottom: 1px solid var(--border); overscroll-behavior: contain; }
+  #search.mini .sstatus { display: none; }
+  /* folded, it is no taller than the scrub bar, so over the page it covers the page-number footer, not text;
+     if the match is under it anyway, it goes to the top for that match (.high, from browseSearch) */
+  #search.mini .sbar { padding-top: 2px; padding-bottom: max(2px, env(safe-area-inset-bottom)); }
+  html.kb #search.mini .sbar { padding-bottom: 2px; }
+  #search.mini .sbar input, #search.mini .sbar button { padding-top: 2px; padding-bottom: 2px; }
+  #search.mini.high { top: 0; bottom: auto; border-top: 0; border-bottom: 1px solid var(--border); }
+  #search.mini.high .sbar { padding-top: max(2px, env(safe-area-inset-top)); padding-bottom: 2px; }
+  #search.mini #searchCount { display: block; }
+  body.search-open #scrubbar { visibility: hidden; } /* the search row takes its place */
   #searchList .hit { touch-action: manipulation; }
   #searchInput { font-size: 16px; } /* smaller text makes iOS zoom the page on focus */
   #dropHint { padding: 6vh 4px; }
@@ -294,14 +310,6 @@ body.autohide.has-doc.chrome-hidden #scrubbar { transform: translateY(100%); poi
   body.autohide.has-doc #toolbar, body.autohide.has-doc #scrubbar { transition: opacity .15s; }
   body.autohide.has-doc.chrome-hidden #toolbar, body.autohide.has-doc.chrome-hidden #scrubbar { transform: none; opacity: 0; }
 }
-/* phones, stepping through matches: in the scrub bar's slot, which floats over the page already */
-#findBar { display: none; }
-body.search-browse #scrubbar { visibility: hidden; }
-body.search-browse #findBar { position: fixed; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); z-index: 16; display: flex; align-items: center; justify-content: space-between; gap: 6px; height: calc(34px + env(safe-area-inset-bottom)); padding: 0 8px env(safe-area-inset-bottom); background: var(--ui); border-top: 1px solid var(--border); font-size: 14px; user-select: none; }
-#findBar button { font: inherit; color: var(--accent); background: none; border: 0; padding: 6px 8px; cursor: pointer; touch-action: manipulation; }
-#findBar .mid { display: flex; align-items: center; gap: 2px; min-width: 0; }
-#findBar .mid button { color: var(--fg); font-size: 22px; line-height: 1; padding: 0 12px; }
-#fbStatus { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* where you are, while the bars are hidden */
 body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed; left: 0; bottom: env(safe-area-inset-bottom); height: 2px; background: var(--accent); opacity: .6; z-index: 14; pointer-events: none; }
 /* one-time tip, the first time the bars hide */
@@ -367,6 +375,7 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
   <div class="sbody" inert>
   <div class="sbar">
     <input id="searchInput" type="search" placeholder="Search the text" autocomplete="off" spellcheck="false">
+    <button id="searchCount" title="Show the list of matches"></button>
     <button id="searchPrev" title="Previous match (Shift+Enter, Shift+F3)">&#8249;</button><button id="searchNext" title="Next match (Enter, F3)">&#8250;</button>
     <button id="searchClose" title="Close (Esc)">&#10005;</button>
   </div>
@@ -374,11 +383,6 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
   <div id="searchList"></div>
   </div>
 </aside>
-<div id="findBar" role="toolbar" aria-label="Search matches">
-  <button id="fbList" title="Back to the list of matches">Results</button>
-  <span class="mid"><button id="fbPrev" aria-label="Previous match">&#8249;</button><span id="fbStatus"></span><button id="fbNext" aria-label="Next match">&#8250;</button></span>
-  <button id="fbDone" title="End the search">Done</button>
-</div>
 
 <main id="stage" tabindex="-1">
   <div id="pane">
@@ -2225,8 +2229,7 @@ const Reflow = (() => {
   // Crossing the breakpoint (rotation, window resize): Raw and Debug have no controls on a phone, so
   // they are switched off; Spread <-> Page needs the buttons refreshed as well as a relayout.
   compactMQ.addEventListener('change', () => {
-    unMini(); // the phone sheet has no find-bar-only form...
-    if (browsing()) openSearch(false); // ...and a wide window has no #findBar: show the panel
+    unMini(); // the folded phone sheet and the desktop find bar don't carry over
     if (!compactMQ.matches || !doc) { applySettings(); return; }
     debug = false;
     if (view === 'raw') { setView('reflow'); return; }
@@ -2352,7 +2355,7 @@ const Reflow = (() => {
     }
     $('#searchStatus').textContent = t;
     $('#searchBack').hidden = SR.origin == null;
-    $('#fbStatus').textContent = SR.cur >= 0 ? `${n(SR.cur + 1)} of ${n(shown)}` : t;
+    $('#searchCount').textContent = SR.cur >= 0 ? `${n(SR.cur + 1)} of ${n(shown)}` : t;
   }
 
   // Bring a hit into view: the page holding it, or (scrolling) a third of the way down the screen.
@@ -2380,19 +2383,17 @@ const Reflow = (() => {
     p.classList.remove('low');
     if (hits()) p.classList.add('low');
   }
-  function unMini() { $('#search').classList.remove('mini', 'low'); }
-  // Phones: the sheet goes away and the page, with the match, shows; #findBar steps through matches.
-  const browsing = () => document.body.classList.contains('search-browse');
+  function unMini() { $('#search').classList.remove('mini', 'low', 'high'); }
+  // Phones: the list folds away, leaving the search row at the bottom over the page with the match.
+  const browsing = () => compactMQ.matches && searchOpen() && $('#search').classList.contains('mini');
   function browseSearch() {
     if (!searchOpen()) return;
     if (document.activeElement === $('#searchInput')) $('#searchInput').blur(); // drop the keyboard
-    $('#search').classList.add('browse'); $('#search .sbody').inert = true;
-    document.body.classList.add('search-browse');
+    const p = $('#search');
+    p.classList.add('mini'); p.classList.remove('high');
     setChrome(true); // a toolbar shown over the page could cover the match (e.g. on its first line)
-  }
-  function endBrowse() {
-    $('#search').classList.remove('browse');
-    document.body.classList.remove('search-browse');
+    const r = h => h.getClientRects()[0] || h.getBoundingClientRect(), m = SR.cur >= 0 && r(SR.hits[SR.cur].range);
+    if (m && m.bottom > p.offsetTop + 2 && m.top < p.offsetTop + p.offsetHeight) p.classList.add('high');
   }
 
   function selectHit(k) {
@@ -2427,14 +2428,14 @@ const Reflow = (() => {
     }
   }
 
-  // Opening or closing search never lays the page out again: the panel, the sheet and #findBar all
-  // float over it. focus=false (phones, back to the list from #findBar) leaves the keyboard down.
+  // Opening or closing search never lays the page out again: the panel and the sheet float over it.
+  // focus=false (phones, the list unfolded from the match count) leaves the keyboard down.
   function openSearch(focus = true) {
     if (!doc) return;
     stopFade();
     toggleToc(false);
+    if (compactMQ.matches) unMini();
     setChrome(false);
-    endBrowse();
     if (!searchOpen()) {
       $('#search').classList.add('open');
       $('#searchTab').setAttribute('aria-expanded', 'true');
@@ -2448,7 +2449,7 @@ const Reflow = (() => {
   function closeSearch(keepPlace = true) {
     if (!searchOpen()) return;
     $('#search').classList.remove('open');
-    unMini(); endBrowse();
+    unMini();
     $('#search .sbody').inert = true; $('#searchTab').setAttribute('aria-expanded', 'false');
     document.body.classList.remove('search-open');
     if (HL) { CSS.highlights.delete('search'); CSS.highlights.delete('search-cur'); }
@@ -2507,16 +2508,23 @@ const Reflow = (() => {
   // The on-screen keyboard shrinks only the visual viewport (iOS; Chrome on Android by default), so the
   // page under it keeps its size and pages; --kb ends the phone sheet at the keyboard's top instead.
   const vv = window.visualViewport;
-  if (vv) vv.addEventListener('resize', () => document.documentElement.style.setProperty('--kb', Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px'));
+  const fitKeyboard = () => {
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty('--kb', kb + 'px');
+    document.documentElement.classList.toggle('kb', kb > 0);
+  };
+  if (vv) { vv.addEventListener('resize', fitKeyboard); vv.addEventListener('scroll', fitKeyboard); }
   $('#searchList').addEventListener('click', e => {
     const b = e.target.closest('.hit');
-    if (b) selectHit(+b.dataset.k); // phones: this also puts the sheet away (browseSearch)
+    if (b) selectHit(+b.dataset.k); // phones: this also folds the list away (browseSearch)
   });
   $('#searchMore').addEventListener('click', () => { unMini(); $('#searchInput').focus(); });
-  $('#fbPrev').addEventListener('click', () => searchGo(-1));
-  $('#fbNext').addEventListener('click', () => searchGo(1));
-  $('#fbList').addEventListener('click', () => openSearch(false));
-  $('#fbDone').addEventListener('click', () => closeSearch());
+  $('#searchCount').addEventListener('click', () => openSearch(false));
+  // Phones: the field, tapped with the list folded, unfolds it (a query is being changed); and dragging
+  // the list drops the keyboard, as native search does. With the keyboard up, iOS can pan the whole
+  // screen for a drag on a fixed sheet instead of scrolling the list in it.
+  $('#searchInput').addEventListener('focus', () => { if (browsing()) openSearch(false); });
+  $('#searchList').addEventListener('touchmove', () => { if (compactMQ.matches && document.activeElement === $('#searchInput')) $('#searchInput').blur(); }, { passive: true });
   $('#searchBack').addEventListener('click', () => {
     if (SR.origin == null || !doc) return;
     const a = anchorAtSrc(SR.origin);
