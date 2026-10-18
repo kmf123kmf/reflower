@@ -12,7 +12,8 @@
 // Phones: add &w=390&h=844 (see below); every run prints a "fit" line flagging anything cut off sideways.
 // &fonts=1 lists the font menu (here and simulated macOS / Linux). &toc=<n> clicks the nth Contents entry. &scrub=<range value> (a page in Page / Spread, 0-1000 along the book in Scroll) / &hover=<0..1> drive the scrub bar.
 // &restore=1 reloads the app with a book open (should reopen at the same page) and after Home (should stay Home).
-// &search=<text>[&next=N] types into the search panel and presses Enter N times. Add Chrome's
+// &search=<text>[&next=N] types into the search panel and presses Enter N times (&tap=N taps a result row,
+// &fb=1 steps with the phone find bar, &close=1 closes search); it checks the text never moves. Add Chrome's
 // --force-prefers-reduced-motion: headless virtual time can leave a page-turn animation on its first frame.
 const q = new URLSearchParams(location.search);
 const f = document.getElementById('f');
@@ -95,47 +96,56 @@ f.addEventListener('load', async () => {
       if (q.get('hover')) { const b = r.getBoundingClientRect(); r.dispatchEvent(new w.PointerEvent('pointermove', { clientX: b.left + 7 + +q.get('hover') * (b.width - 14), clientY: b.top + b.height / 2, bubbles: true })); out.push(`hover tip "${tip.textContent}" (page still ${app.state.page})`); }
     }
     if (q.get('search')) { // type into the search panel like a reader, then press Enter (&next=N presses it N times)
-      const d = w.document, inp = d.getElementById('searchInput');
-      const paneBox = () => { const r = d.getElementById('pane').getBoundingClientRect(); return `${Math.round(r.left)}-${Math.round(r.right)}`; }, pane0 = paneBox();
+      const d = w.document, inp = d.getElementById('searchInput'), sp = d.getElementById('search');
+      // Search must never move the text: same pages, same page box, same text area, same scroll offset.
+      const geo = () => { const r = d.getElementById('pane').getBoundingClientRect(), v = d.getElementById('viewport').getBoundingClientRect(), y = d.getElementById('stage').scrollTop; // y: in the content, not on screen
+        return `${app.state.pages} pages, pane x ${Math.round(r.left)}-${Math.round(r.right)} y ${Math.round(r.top + y)}-${Math.round(r.bottom + y)}, text ${Math.round(v.width)}x${Math.round(v.height)}`; };
+      const where = () => `page ${app.state.page}, scrollTop ${Math.round(d.getElementById('stage').scrollTop)}`;
+      const same = (a, b) => a === b ? 'UNCHANGED' : `MOVED (${a} -> ${b})`;
+      const g0 = geo(), w0 = where();
       d.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: '/', bubbles: true }));
       inp.value = q.get('search');
       inp.dispatchEvent(new w.Event('input', { bubbles: true }));
       const t0 = performance.now();
       for (let n = 0; n < 500 && !(app.state.search.q && app.state.search.done); n++) await new Promise(r => setTimeout(r, 20));
       const before = app.state.page;
-      out.push(`pane ${pane0} -> ${paneBox()} with the panel open (panel from ${Math.round(d.getElementById('search').getBoundingClientRect().left)})`);
+      out.push(`opening search: layout ${same(g0, geo())}, position ${same(w0, where())} [${g0}; ${w0}]`);
+      // what floats over the text where it shows (the panel / sheet, #findBar, floating bars)
+      const shown = el => el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && +getComputedStyle(el).opacity > 0.1;
+      const covers = r => ['search', 'findBar', 'toolbar', 'scrubbar'].map(id => d.getElementById(id)).filter(shown)
+        .filter(el => { const b = el.getBoundingClientRect(); return r.right > b.left && r.left < b.right && r.bottom > b.top && r.top < b.bottom; }).map(el => el.id);
+      const ui = () => `panel ${sp.classList.contains('open') ? 'open' : 'closed'}${['mini', 'low', 'browse'].filter(c => sp.classList.contains(c)).map(c => ' ' + c).join('')}, findBar ${shown(d.getElementById('findBar')) ? 'shown "' + d.getElementById('findBar').textContent.replace(/\s+/g, ' ').trim() + '"' : 'hidden'}, bars ${app.state.chromeHidden ? 'hidden' : 'shown'}`;
+      const matchSeen = () => { const hc = w.CSS.highlights && w.CSS.highlights.get('search-cur'), cr = hc && [...hc][0];
+        if (!cr) return 'no current match';
+        d.getAnimations().forEach(a => a.finish());
+        const r = cr.getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect(), sv = d.getElementById('stage').getBoundingClientRect();
+        const inside = r.left >= v.left - 1 && r.right <= v.right + 1 && r.top >= Math.max(v.top, sv.top) - 1 && r.bottom <= Math.min(v.bottom, sv.bottom) + 1, cov = covers(r);
+        return `current match ${inside && !cov.length ? 'visible' : 'NOT VISIBLE' + (cov.length ? ' (under ' + cov.join(', ') + ')' : ' (outside the text area)')} at x=${Math.round(r.left)} y=${Math.round(r.top)}`; };
       for (let n = +(q.get('next') || 1); n > 0; n--) inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      if (q.get('tap')) { // &tap=N then taps the Nth result row, as on a phone
+      if (q.get('tap')) { // &tap=N then taps the Nth result row, as on a phone (first back to the list if Enter put it away)
         await new Promise(r => setTimeout(r, 300));
+        if (sp.classList.contains('browse')) { d.getElementById('fbList').click(); out.push(`Results -> ${ui()}; keyboard ${d.activeElement === inp ? 'UP' : 'down'}`); }
         d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
         out.push(`tapped row ${q.get('tap')}; keyboard ${d.activeElement === inp ? 'STILL UP (input focused)' : 'dismissed'}`);
-        if (q.get('dbl')) { // &dbl=1: tap the same row again straight away (a double tap closes the sheet on phones)
-          const hc = w.CSS.highlights.get('search-cur'), range = hc && [...hc][0];
-          await new Promise(r => setTimeout(r, 150));
-          d.querySelectorAll('#searchList .hit')[+q.get('tap')].click();
-          d.getAnimations().forEach(a => a.finish());
-          const r = range && range.getClientRects()[0], st = d.getElementById('stage').getBoundingClientRect(), v = d.getElementById('viewport').getBoundingClientRect();
-          // floating bars (auto-hide) cover the text where they show
-          const bar = id => { const el = d.getElementById(id); return el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && +getComputedStyle(el).opacity > 0.1 ? el.getBoundingClientRect() : null; };
-          const tb = bar('toolbar'), sb = bar('scrubbar');
-          const top = Math.max(st.top, v.top, tb && tb.bottom <= st.top + st.height / 2 ? tb.bottom : -1e9), bottom = Math.min(st.bottom, v.bottom, sb && sb.top >= st.top + st.height / 2 ? sb.top : 1e9);
-          out.push(`double tap: panel ${app.state.search && d.getElementById('search').classList.contains('open') ? 'STILL OPEN' : 'closed'}; match ${r && r.top >= top - 2 && r.bottom <= bottom + 2 && r.left >= v.left - 1 && r.right <= v.right + 1 ? 'still visible' : 'NOT VISIBLE'} (y=${r ? Math.round(r.top) : '?'}; uncovered text area y ${Math.round(top)}-${Math.round(bottom)})`);
-        }
       }
       await new Promise(r => setTimeout(r, 400)); // let the page turn finish
       const s = app.state.search;
       out.push(`search "${s.q}": total=${s.total} shown=${s.shown} cur=${s.cur} done=${s.done} in ${Math.round(performance.now() - t0)}ms; page ${before} -> ${app.state.page}`);
       out.push(`status: ${d.getElementById('searchStatus').textContent}`);
-      const hc = w.CSS.highlights && w.CSS.highlights.get('search-cur'), cr = hc && [...hc][0];
-      if (cr) { d.getAnimations().forEach(a => a.finish());
-        const r = cr.getClientRects()[0], v = d.getElementById('viewport').getBoundingClientRect(), sv = d.getElementById('stage').getBoundingClientRect();
-        const sp = d.getElementById('search').getBoundingClientRect(), under = sp.width >= w.innerWidth - 1 && r.top < sp.bottom; // a full-width sheet covering it
-        const top = Math.max(v.top, sv.top), bottom = Math.min(v.bottom, sv.bottom);
-        out.push(`current match ${r && !under && r.left <= v.right && r.right >= v.left && r.top >= top && r.bottom <= bottom ? 'visible' : 'NOT VISIBLE'} (x=${Math.round(r.left)} y=${Math.round(r.top)}; text area x ${Math.round(v.left)}-${Math.round(v.right)} y ${Math.round(top)}-${Math.round(bottom)}; search panel y ${Math.round(sp.top)}-${Math.round(sp.bottom)})`); }
+      out.push(`ui: ${ui()}`);
+      out.push(matchSeen());
+      out.push(`while searching: layout ${same(g0, geo())}`);
+      if (q.get('fb')) { // &fb=1: step with #findBar's › (phones)
+        d.getElementById('fbNext').click(); await new Promise(r => setTimeout(r, 400));
+        out.push(`findBar ›: cur=${app.state.search.cur}, page ${app.state.page}; ${ui()}; ${matchSeen()}`);
+      }
       const row = d.querySelector('#searchList .hit.cur');
       out.push(`current row: ${row ? row.textContent : '(none)'}`);
-      if (q.get('close')) { // &close=1: Escape closes the panel; the match should stay lit, then fade out
-        inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      if (q.get('close')) { // &close=1: Escape closes the panel; nothing moves, and the match stays lit, then fades out
+        const w1 = where();
+        if (sp.classList.contains('browse')) d.getElementById('fbDone').click(); // phones: Done on #findBar
+        else inp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        out.push(`closing search: layout ${same(g0, geo())}, position ${same(w1, where())}; ${ui()}`);
         const fade = () => { const h = w.CSS.highlights.get('search-fade'), r = h && [...h][0], m = [...d.head.querySelectorAll('style')].map(s => s.textContent.match(/search-fade\) \{ background-color: ([^;]+)/)).find(Boolean);
           return h ? `"${r}" ${m ? m[1] : 'no rule'}` : 'gone'; };
         let t = 0;

@@ -209,13 +209,20 @@ body:not(.has-doc) #search { display: none; }
 #searchTab:hover, #search.open #searchTab { color: var(--fg); }
 #search .sbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 body.has-doc #stage, body.has-doc #scrubbar { margin-left: 28px; margin-right: 28px; } /* strips for the Contents and Search tabs, clear of the page */
-@media (min-width: 860px) { body.has-doc.search-open #stage, body.has-doc.search-open #scrubbar { margin-right: 368px; } } /* room to spare: dock beside the page */
+/* Search never changes the page's geometry (that would move the text and, paged, its page breaks): the
+   panel floats over the page. When it would cover the match being shown it shrinks to its find bar
+   (.mini, list hidden), at the top or, if the match is up there, at the bottom (.low). */
+#search.mini { bottom: auto; }
+#search.mini.low { top: auto; bottom: calc(34px + env(safe-area-inset-bottom)); }
+#search.mini #searchList { display: none; }
+#search .slinks { display: flex; gap: 12px; }
 #search .sbar { display: flex; gap: 4px; padding: 10px 10px 6px; }
 #searchInput { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--fg); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
 #searchInput:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 #search .sstatus { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 24px; padding: 0 12px 6px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-#searchBack { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; white-space: nowrap; }
-#searchBack:hover { text-decoration: underline; }
+#searchBack, #searchMore { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; white-space: nowrap; }
+#searchBack:hover, #searchMore:hover { text-decoration: underline; }
+#search:not(.mini) #searchMore { display: none; }
 #searchList { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--border); }
 #searchList .hit { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 7px 12px; color: var(--fg); font: 14px/1.4 var(--font); cursor: pointer; overflow-wrap: anywhere; }
 #searchList .hit:hover { background: var(--paper); }
@@ -254,13 +261,14 @@ html[data-theme="dark"] ::highlight(search-cur) { background-color: #d9a066; col
   .panel { left: 8px; right: 8px !important; min-width: 0; max-height: calc(100% - var(--tb-h, 40px) - 8px); overflow-y: auto; }
   .panel input[type="range"] { width: auto; flex: 1; max-width: 180px; }
   #toc, #search { width: 100%; max-width: none; }
-  /* Search is a sheet under the toolbar and the page lays itself out in the space below it, so a tapped
-     result shows in context. At the top rather than the bottom: the on-screen keyboard covers the bottom. */
-  body { --sheet-h: min(42vh, 380px); }
-  #search { bottom: auto; height: var(--sheet-h); border-left: 0; border-bottom: 1px solid var(--border); transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
-  #search.open { opacity: 1; visibility: visible; transition: opacity .15s; }
-  body.has-doc.search-open #stage { margin-top: var(--sheet-h); }
-  #searchList .hit { touch-action: manipulation; } /* double tap closes the sheet rather than zooming */
+  /* Search is in two steps, neither of which moves the page under it. The query and results are a
+     sheet over the whole page below the toolbar (ending at the on-screen keyboard, --kb). Picking a
+     result (or Enter, or ‹ ›) puts the sheet away and shows the match in the page, with #findBar in the
+     scrub bar's place to step through matches, go back to the list, or finish. */
+  #search { bottom: var(--kb, 0px); border-left: 0; transform: none; opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
+  #search.open:not(.browse) { opacity: 1; visibility: visible; transition: opacity .15s; }
+  #search.mini #searchList { display: block; }
+  #searchList .hit { touch-action: manipulation; }
   #searchInput { font-size: 16px; } /* smaller text makes iOS zoom the page on focus */
   #dropHint { padding: 6vh 4px; }
   #dropHint .box { padding: 28px 16px; }
@@ -286,7 +294,14 @@ body.autohide.has-doc.chrome-hidden #scrubbar { transform: translateY(100%); poi
   body.autohide.has-doc #toolbar, body.autohide.has-doc #scrubbar { transition: opacity .15s; }
   body.autohide.has-doc.chrome-hidden #toolbar, body.autohide.has-doc.chrome-hidden #scrubbar { transform: none; opacity: 0; }
 }
-@media (max-width: 700px) { body.autohide.has-doc.search-open #stage { margin-top: calc(var(--tb-h, 41px) + var(--sheet-h)); } } /* the sheet hangs below the floating toolbar */
+/* phones, stepping through matches: in the scrub bar's slot, which floats over the page already */
+#findBar { display: none; }
+body.search-browse #scrubbar { visibility: hidden; }
+body.search-browse #findBar { position: fixed; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); z-index: 16; display: flex; align-items: center; justify-content: space-between; gap: 6px; height: calc(34px + env(safe-area-inset-bottom)); padding: 0 8px env(safe-area-inset-bottom); background: var(--ui); border-top: 1px solid var(--border); font-size: 14px; user-select: none; }
+#findBar button { font: inherit; color: var(--accent); background: none; border: 0; padding: 6px 8px; cursor: pointer; touch-action: manipulation; }
+#findBar .mid { display: flex; align-items: center; gap: 2px; min-width: 0; }
+#findBar .mid button { color: var(--fg); font-size: 22px; line-height: 1; padding: 0 12px; }
+#fbStatus { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* where you are, while the bars are hidden */
 body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed; left: 0; bottom: env(safe-area-inset-bottom); height: 2px; background: var(--accent); opacity: .6; z-index: 14; pointer-events: none; }
 /* one-time tip, the first time the bars hide */
@@ -355,10 +370,15 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
     <button id="searchPrev" title="Previous match (Shift+Enter, Shift+F3)">&#8249;</button><button id="searchNext" title="Next match (Enter, F3)">&#8250;</button>
     <button id="searchClose" title="Close (Esc)">&#10005;</button>
   </div>
-  <div class="sstatus"><span id="searchStatus"></span><button id="searchBack" hidden title="Return to the reading position from before you jumped to a match">&#8617; Back to where I was</button></div>
+  <div class="sstatus"><span id="searchStatus"></span><span class="slinks"><button id="searchBack" hidden title="Return to the reading position from before you jumped to a match">&#8617; Back to where I was</button><button id="searchMore" title="Show the list of matches again">Show list</button></span></div>
   <div id="searchList"></div>
   </div>
 </aside>
+<div id="findBar" role="toolbar" aria-label="Search matches">
+  <button id="fbList" title="Back to the list of matches">Results</button>
+  <span class="mid"><button id="fbPrev" aria-label="Previous match">&#8249;</button><span id="fbStatus"></span><button id="fbNext" aria-label="Next match">&#8250;</button></span>
+  <button id="fbDone" title="End the search">Done</button>
+</div>
 
 <main id="stage" tabindex="-1">
   <div id="pane">
@@ -1836,14 +1856,6 @@ const Reflow = (() => {
     document.body.classList.toggle('spread', paged && layoutNow() === 'spread');
     const w = Math.min(S.widths[layoutNow()] || 760, window.innerWidth - 24);
     document.documentElement.style.setProperty('--pane-w', Math.max(320, w) + 'px');
-    // With the search panel docked, the stage ends at the panel, but
-    // the page keeps the place it had without the panel, moving left only as far as it must to clear it.
-    pane.style.marginLeft = '';
-    const docked = document.body.classList.contains('search-open') && parseFloat(getComputedStyle(stage).marginRight) > 28;
-    if (docked) {
-      const P = Math.max(320, w), Wd = stage.clientWidth, Wu = Wd + $('#search').offsetWidth; // ...and without it
-      if (P <= Wd - 24) pane.style.marginLeft = Math.min((Wu - P) / 2, Wd - 12 - P) + 'px';
-    }
     content.style.width = content.style.height = content.style.columnCount = content.style.columnGap = content.style.columnFill = content.style.transform = '';
     if (paged) {
       const vw = Math.floor(viewport.clientWidth), vh = Math.floor(viewport.clientHeight);
@@ -2209,10 +2221,12 @@ const Reflow = (() => {
   $('#tocTab').addEventListener('click', () => toggleToc());
   // compact toolbar stand-ins for the drawer tabs (stopPropagation: the document click handler closes the drawer)
   $('#btnTocTb').addEventListener('click', e => { e.stopPropagation(); closeSearch(); toggleToc(); });
-  $('#btnSearchTb').addEventListener('click', e => { e.stopPropagation(); if (searchOpen()) closeSearch(); else openSearch(); });
+  $('#btnSearchTb').addEventListener('click', e => { e.stopPropagation(); if (searchOpen() && !browsing()) closeSearch(); else openSearch(); });
   // Crossing the breakpoint (rotation, window resize): Raw and Debug have no controls on a phone, so
   // they are switched off; Spread <-> Page needs the buttons refreshed as well as a relayout.
   compactMQ.addEventListener('change', () => {
+    unMini(); // the phone sheet has no find-bar-only form...
+    if (browsing()) openSearch(false); // ...and a wide window has no #findBar: show the panel
     if (!compactMQ.matches || !doc) { applySettings(); return; }
     debug = false;
     if (view === 'raw') { setView('reflow'); return; }
@@ -2338,19 +2352,47 @@ const Reflow = (() => {
     }
     $('#searchStatus').textContent = t;
     $('#searchBack').hidden = SR.origin == null;
+    $('#fbStatus').textContent = SR.cur >= 0 ? `${n(SR.cur + 1)} of ${n(shown)}` : t;
   }
 
   // Bring a hit into view: the page holding it, or (scrolling) a third of the way down the screen.
   // The match then becomes the held reading position, so it's what gets saved, and a relayout
-  // (resize, font change, panel docking) keeps it on screen rather than the top of the page.
+  // (resize, font change) keeps it on screen rather than the top of the page.
   function revealHit(h) {
-    flushRelayout(); // e.g. the panel just docked and narrowed the page
+    flushRelayout(); // e.g. a resize still waiting for its frame
     stopTurn();
     const r = h.range;
     revealRect(r.getClientRects()[0] || r.getBoundingClientRect(), stage.clientHeight / 3);
     held = { caret: { node: r.startContainer, offset: r.startOffset }, el: h.el, line: h.line, src: h.src };
     ownScrollTop = stage.scrollTop;
     updateIndicator();
+    if (compactMQ.matches) browseSearch(); else dodgeHit(r);
+  }
+  // Wide windows: the panel floats over the page, so if it would cover the match it gets out of the way
+  // instead of the page moving: it shrinks to its find bar, at the top, or at the bottom if the match
+  // is up there. It stays small while stepping through matches; "Show list" or a new query restores it.
+  // (Measured straight after the page turn starts: setPage puts the page in its final place at once.
+  // The panel's box is read without its transform, which is still sliding it in just after opening.)
+  function dodgeHit(range) {
+    const r = range.getClientRects()[0] || range.getBoundingClientRect(), p = $('#search');
+    const hits = () => r.right > p.offsetLeft - 4 && r.left < p.offsetLeft + p.offsetWidth + 4 && r.bottom > p.offsetTop - 4 && r.top < p.offsetTop + p.offsetHeight + 4;
+    if (!p.classList.contains('mini')) { if (!hits()) return; p.classList.add('mini'); }
+    p.classList.remove('low');
+    if (hits()) p.classList.add('low');
+  }
+  function unMini() { $('#search').classList.remove('mini', 'low'); }
+  // Phones: the sheet goes away and the page, with the match, shows; #findBar steps through matches.
+  const browsing = () => document.body.classList.contains('search-browse');
+  function browseSearch() {
+    if (!searchOpen()) return;
+    if (document.activeElement === $('#searchInput')) $('#searchInput').blur(); // drop the keyboard
+    $('#search').classList.add('browse'); $('#search .sbody').inert = true;
+    document.body.classList.add('search-browse');
+    setChrome(true); // a toolbar shown over the page could cover the match (e.g. on its first line)
+  }
+  function endBrowse() {
+    $('#search').classList.remove('browse');
+    document.body.classList.remove('search-browse');
   }
 
   function selectHit(k) {
@@ -2385,39 +2427,37 @@ const Reflow = (() => {
     }
   }
 
-  function openSearch() {
+  // Opening or closing search never lays the page out again: the panel, the sheet and #findBar all
+  // float over it. focus=false (phones, back to the list from #findBar) leaves the keyboard down.
+  function openSearch(focus = true) {
     if (!doc) return;
     stopFade();
     toggleToc(false);
     setChrome(false);
+    endBrowse();
     if (!searchOpen()) {
       $('#search').classList.add('open');
-      $('#search .sbody').inert = false; $('#searchTab').setAttribute('aria-expanded', 'true');
+      $('#searchTab').setAttribute('aria-expanded', 'true');
       document.body.classList.add('search-open');
       if (HL) { CSS.highlights.set('search', HL.all); CSS.highlights.set('search-cur', HL.cur); }
-      relayout(holdAnchor()); // docked: now, not next frame, so the page never visibly jumps
     }
-    const inp = $('#searchInput');
-    inp.focus(); inp.select();
+    $('#search .sbody').inert = false;
+    if (focus) { const inp = $('#searchInput'); inp.focus(); inp.select(); }
+    else { const row = $('#searchList .hit.cur'); if (row) row.scrollIntoView({ block: 'nearest' }); }
   }
-  // Scrolling, the reading point (e.g. the match just shown) keeps its height on screen: on phones
-  // the sheet above it goes away, and moving it up to the top edge would put it under a floating toolbar.
   function closeSearch(keepPlace = true) {
     if (!searchOpen()) return;
-    const a = keepPlace ? holdAnchor() : null, r0 = a && !isPaged() ? anchorRect(a) : null;
     $('#search').classList.remove('open');
+    unMini(); endBrowse();
     $('#search .sbody').inert = true; $('#searchTab').setAttribute('aria-expanded', 'false');
     document.body.classList.remove('search-open');
     if (HL) { CSS.highlights.delete('search'); CSS.highlights.delete('search-cur'); }
     if (!keepPlace) return;
-    relayout(a);
-    const r1 = r0 && anchorRect(a);
-    if (r1) { stage.scrollTop += r1.top - r0.top; ownScrollTop = stage.scrollTop; updateIndicator(); }
     stage.focus();
     if (SR.cur >= 0) fadeHit(SR.hits[SR.cur].range);
   }
-  // After the panel closes, the match just shown stays lit for a moment and then fades, so the eye
-  // can find it again if the page re-flowed as the panel went. A ::highlight can't be given a CSS
+  // After search closes, the match just shown stays lit for a moment and then fades, so the eye
+  // keeps its place as the other matches' highlights go. A ::highlight can't be given a CSS
   // transition, so the rule's colour is stepped from here.
   const fadeCss = document.head.appendChild(document.createElement('style'));
   let fadeTimer = 0;
@@ -2453,7 +2493,7 @@ const Reflow = (() => {
   const flushSearch = () => {
     clearTimeout(searchTimer); searchTimer = 0;
     const q = $('#searchInput').value;
-    if (q !== SR.q) { SR.q = q; runSearch(); }
+    if (q !== SR.q) { SR.q = q; unMini(); runSearch(); }
   };
   $('#searchInput').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(flushSearch, 200); });
   $('#searchInput').addEventListener('keydown', e => {
@@ -2464,22 +2504,19 @@ const Reflow = (() => {
   $('#searchClose').addEventListener('click', closeSearch);
   $('#searchNext').addEventListener('click', () => { flushSearch(); searchGo(1); });
   $('#searchPrev').addEventListener('click', () => { flushSearch(); searchGo(-1); });
-  // Phones: a tap shows the match below the sheet; a second tap on the same row within half a second
-  // closes the sheet, keeping the match on screen (detected here: iOS doesn't reliably fire dblclick),
-  // and hides auto-hiding bars too: that's the way back to reading, and a bar shown over the page
-  // could cover the match (e.g. on the first line of a page).
-  let lastTap = { k: -1, t: 0 };
+  // The on-screen keyboard shrinks only the visual viewport (iOS; Chrome on Android by default), so the
+  // page under it keeps its size and pages; --kb ends the phone sheet at the keyboard's top instead.
+  const vv = window.visualViewport;
+  if (vv) vv.addEventListener('resize', () => document.documentElement.style.setProperty('--kb', Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px'));
   $('#searchList').addEventListener('click', e => {
     const b = e.target.closest('.hit');
-    if (!b) return;
-    const k = +b.dataset.k, now = Date.now();
-    if (compactMQ.matches) {
-      if (k === lastTap.k && now - lastTap.t < 500) { lastTap = { k: -1, t: 0 }; closeSearch(); setChrome(true); return; }
-      lastTap = { k, t: now };
-      if (document.activeElement === $('#searchInput')) $('#searchInput').blur(); // drop the keyboard so the page shows
-    }
-    selectHit(k);
+    if (b) selectHit(+b.dataset.k); // phones: this also puts the sheet away (browseSearch)
   });
+  $('#searchMore').addEventListener('click', () => { unMini(); $('#searchInput').focus(); });
+  $('#fbPrev').addEventListener('click', () => searchGo(-1));
+  $('#fbNext').addEventListener('click', () => searchGo(1));
+  $('#fbList').addEventListener('click', () => openSearch(false));
+  $('#fbDone').addEventListener('click', () => closeSearch());
   $('#searchBack').addEventListener('click', () => {
     if (SR.origin == null || !doc) return;
     const a = anchorAtSrc(SR.origin);
@@ -2634,7 +2671,7 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
   // use (Home, a drawer, a menu, search, a scrub drag, keyboard focus) they stay.
   let chromeHidden = false, tapClosedSomething = false, hintTimer = 0;
   const autoHiding = () => autoMQ.matches && !!doc;
-  const chromeNeeded = () => !doc || searchOpen() || $('#toc').classList.contains('open') || scrubDragging
+  const chromeNeeded = () => !doc || (searchOpen() && !browsing()) || $('#toc').classList.contains('open') || scrubDragging
     || Object.values(panels).some(s => $(s).classList.contains('open'))
     || !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#toolbar, #scrubbar') && document.activeElement.matches(':focus-visible'));
   function setChrome(hidden) {
