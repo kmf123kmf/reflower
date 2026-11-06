@@ -209,6 +209,21 @@ f.addEventListener('load', async () => {
       p0 = app.state.page; mid = await drag(0.03, 0.6, 8, 40); res('from the screen edge (left to Safari)', p0, mid);
       p0 = app.state.page; mid = await drag(0.5, 0.45, 8, 40, 200); res('mostly vertical', p0, mid);
     }
+    if (q.get('flip')) { // &flip=1&layout=page|spread: page turns through the StPageFlip book (needs frames and motion: &hold=/__hold, no reduced-motion flag)
+      const d = w.document, wait = ms => new Promise(r => setTimeout(r, ms)), book = () => d.getElementById('flip');
+      const tx = () => d.getElementById('content').style.transform, lay = q.get('layout') || 'page';
+      app.setLayout(lay); app.setPage(1, false); await wait(100);
+      let t0 = tx();
+      app.setPage(2);
+      out.push(`turn: book ${book() ? 'open' : 'MISSING'}, ${d.querySelectorAll('.fpage').length} pages, ${d.querySelectorAll('.ffrag').length} text fragments, strip ${tx() !== t0 ? 'moved at once' : 'DID NOT MOVE'}`);
+      await wait(900);
+      out.push(`turn over: book ${book() ? 'STILL OPEN' : 'gone'}, page ${app.state.page}`);
+      app.setPage(0); await wait(100); app.setLayout(lay === 'page' ? 'spread' : 'page');
+      out.push(`layout change mid-turn: book ${book() ? 'STILL OPEN' : 'gone'}`);
+      app.setLayout(lay); await wait(100);
+      app.setPage(app.state.pages - 1); await wait(900);
+      out.push(`jump to the end: page ${app.state.page}/${app.state.pages - 1}, book ${book() ? 'STILL OPEN' : 'gone'}`);
+    }
     if (q.get('hist')) { // &hist=1: Home and the browser's Back / Forward
       const d = w.document, wait = ms => new Promise(r => setTimeout(r, ms));
       out.push(`history: open book -> state ${JSON.stringify(w.history.state)}`);

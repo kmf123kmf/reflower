@@ -1,6 +1,6 @@
 # Reflower
 
-Single-file local web app (`index.html`, no dependencies, works from `file://`) that reflows
+Single-file local web app (`index.html`, nothing to install or fetch, works from `file://`; StPageFlip is inlined) that reflows
 hard-wrapped story text files. Drag a `.txt` or `.rtf` onto the page.
 
 RTF support: `Reflow.fromRTF(src)` converts RTF to plain text (bold/italic as `**x**`/`_x_`)
@@ -18,9 +18,15 @@ Search never changes the page's geometry: on wide windows the panel floats over 
 its find bar (`.mini`, `.low` at the bottom) when it would cover the match; on phones it is one sheet anchored
 at the bottom (above the keyboard, `--kb`); picking a result folds the list away (`.mini`), leaving the search row.
 
+Page turns are StPageFlip's curl on a throwaway book (`openFlip`): the column strip stays the only real text, and `setPage` still
+moves it at once underneath. `flipPage` copies the blocks on a page into absolutely placed fragments that match the strip to the pixel,
+so the hand-over at the end of a turn doesn't jump. The text CSS is `:is(#content, .ftext)` so the copies get it. Mouse drags start at the
+page's corners (elsewhere a drag selects text). Reduced motion: no book; turns are instant and a swipe moves the strip.
+
 ## Layout
 - `index.html` – everything. `<script id="reflow-engine">` holds the pure reflow engine
-  (`Reflow.analyze / toHTML / toText`, no DOM access); the second script is the UI.
+  (`Reflow.analyze / toHTML / toText`, no DOM access); `<script id="page-flip">` is StPageFlip 2.0.7, patched so its frame loop
+  stops with its book (see the note above it); the third script is the UI.
 - `tests/make_samples.py` – generates synthetic hard-wrapped samples into `samples/` and
   `tests/expectations.json`.
 - `tests/test.html` – engine test page (extracts the engine from `index.html`).
@@ -47,7 +53,8 @@ CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
   The compact layout (CSS `@media (max-width: 700px)` + JS `compactMQ`) hides Spread/Raw/Debug.
   Auto-hiding bars (`body.autohide` from JS `autoMQ`: compact width or a short touch screen) float the
   toolbar/scrub bar over the text; `&chrome=1` taps through hide/show and checks page breaks don't move.
-  `&swipe=1` drives synthetic touch drags (follow, spring back, flick, edge margin, vertical);
+  `&swipe=1` drives synthetic touch drags (follow, spring back, flick, edge margin, vertical; run it with `--force-prefers-reduced-motion`, or the strip won't follow: the book does);
+  `&flip=1&layout=page|spread&hold=/__hold` (no budget, no reduced-motion flag) checks the page-turn book opens, closes and survives a layout change;
   `&hist=1` checks Home / Back / Forward (each opened book pushes a history entry; Home goes back `depth` entries, all the way Home) and Recent's one-entry-per-name;
   `&restore=1` reloads with a book open (must reopen at the same page) and after Home (must stay Home).
 - Use a fresh `--user-data-dir` per run (e.g. `"$TEMP/rf-$RANDOM"`) when testing edits: a reused

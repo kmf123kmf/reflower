@@ -8,7 +8,7 @@ a narrow, ragged column. Reflower works out which line breaks are just wrapping 
 intentional. It then re-flows the text into proper paragraphs that fit whatever screen you read on.
 
 **Use it online:** https://kmf123kmf.github.io/reflower/
-(or download `index.html` and open it in a browser; it is a single file with no dependencies)
+(or download `index.html` and open it in a browser; it is a single file with nothing else to install)
 
 Your files never leave your device. Everything runs locally in the browser.
 
@@ -50,7 +50,7 @@ text file is reflowed too.
   - **Spread:** two facing pages, on wide screens.
 - **Turning pages:** use the arrow keys, Page Up/Down, Space, the mouse wheel, tapping or clicking
   the page edges, or the scrub bar along the bottom. On touch screens you can also swipe: the page
-  follows your finger. Swipes that start right at the screen's edge are left to the browser's own
+  curls after your finger. With a mouse, drag a corner of the page. Swipes that start right at the screen's edge are left to the browser's own
   back/forward gesture.
 - **Back button:** Back (or Safari's edge swipe) returns from a book to Home, and Forward reopens it.
 - **Contents:** a list of the detected chapters.
