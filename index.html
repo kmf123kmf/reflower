@@ -334,6 +334,8 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
 .fspine { border-left: 1px solid var(--border); opacity: .6; }
 /* the back of a turning leaf in Page layout: StPageFlip reuses a copy of the front (added after its shadows) */
 .stf__hardInnerShadow ~ .fpage > .fin { transform: scaleX(-1); opacity: .1; }
+/* for its first frame the copy is whole and unclipped, and would blank the page */
+.stf__hardInnerShadow ~ .fpage.--simple { visibility: hidden; }
 /* Page layout, turning back: a forward turn in a mirrored book, hinged on the right; .fin mirrors the page back */
 #flip.mirror { transform: scaleX(-1); }
 #flip.mirror .fin { transform: scaleX(-1); }
