@@ -328,12 +328,16 @@ body.autohide.has-doc.chrome-hidden #progLine { display: block; position: fixed;
 /* page turns: a throwaway StPageFlip book over the page while it turns (see "page turns" in the script) */
 #flip { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
 .fpage { position: absolute; background: var(--paper); overflow: hidden; }
-.ftext, .ffrag, .fspine, .fpager { position: absolute; }
+.fin, .ftext, .ffrag, .fspine, .fpager { position: absolute; }
 .ffrag { overflow: hidden; }
 .ffrag > * { position: relative; }
 .fspine { border-left: 1px solid var(--border); opacity: .6; }
 /* the back of a turning leaf in Page layout: StPageFlip reuses a copy of the front (added after its shadows) */
-.stf__hardInnerShadow ~ .fpage > * { transform: scaleX(-1); opacity: .1; }
+.stf__hardInnerShadow ~ .fpage > .fin { transform: scaleX(-1); opacity: .1; }
+/* Page layout, turning back: a forward turn in a mirrored book, hinged on the right; .fin mirrors the page back */
+#flip.mirror { transform: scaleX(-1); }
+#flip.mirror .fin { transform: scaleX(-1); }
+#flip.mirror .stf__hardInnerShadow ~ .fpage > .fin { transform: none; }
 </style>
 </head>
 <body class="chapter-breaks">
@@ -1940,12 +1944,13 @@ const Reflow = (() => {
     const add = (parent, tag, cls) => parent.appendChild(Object.assign(document.createElement(tag), { className: cls }));
     const el = add(host, 'div', 'fpage');
     px(el, 0, 0, pw, host.offsetHeight);
-    const text = px(add(el, 'div', 'ftext ' + content.className), vr.left - pr.left + c * (cw + GAP - pw), vr.top - pr.top, cw, vr.height);
-    if (cols > 1) px(add(el, 'i', 'fspine'), vr.left - pr.left + vr.width / 2 - c * pw, vr.top - pr.top, 0, vr.height);
+    const fin = px(add(el, 'div', 'fin'), 0, 0, pw, host.offsetHeight);
+    const text = px(add(fin, 'div', 'ftext ' + content.className), vr.left - pr.left + c * (cw + GAP - pw), vr.top - pr.top, cw, vr.height);
+    if (cols > 1) px(add(fin, 'i', 'fspine'), vr.left - pr.left + vr.width / 2 - c * pw, vr.top - pr.top, 0, vr.height);
     const pager = $('#pager').cloneNode(true), gr = $('#pager').getBoundingClientRect();
     pager.removeAttribute('id'); pager.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
     pager.className = 'fpager';
-    px(el.appendChild(pager), gr.left - pr.left - c * pw, gr.top - pr.top, gr.width, gr.height);
+    px(fin.appendChild(pager), gr.left - pr.left - c * pw, gr.top - pr.top, gr.width, gr.height);
     const a = anchorAtPage(p);
     pager.querySelector('span').textContent = a && a.src != null ? progressText(progressAt(a.src, p >= pages - 1), p) : '';
 
@@ -1976,17 +1981,22 @@ const Reflow = (() => {
     return el;
   }
   // A book of two pages, or two spreads, open at `from`. `to` can be any page: it's simply the next leaf.
+  // Page layout has no facing page for a back turn to come from, so that's a forward turn in a mirrored
+  // book: the page peels from its left side, hinged on the right, the reverse of turning forward.
   function openFlip(from, to) {
     stopTurn();
     const host = Object.assign(document.createElement('div'), { id: 'flip' });
     pane.appendChild(host);
-    const cols = layoutNow() === 'spread' ? 2 : 1, pw = host.offsetWidth / cols, seq = to > from ? [from, to] : [to, from];
+    const cols = layoutNow() === 'spread' ? 2 : 1, pw = host.offsetWidth / cols, mirror = cols === 1 && to < from;
+    const fwd = to > from || mirror, seq = fwd ? [from, to] : [to, from];
+    host.classList.toggle('mirror', mirror);
     const items = seq.flatMap(p => Array.from({ length: cols }, (_, c) => flipPage(p, c, pw, host)));
-    const pf = new St.PageFlip(host, { width: pw, height: host.offsetHeight, autoSize: false, useMouseEvents: false, flippingTime: FLIP_MS, maxShadowOpacity: 0.5, startPage: to > from ? 0 : cols });
+    const pf = new St.PageFlip(host, { width: pw, height: host.offsetHeight, autoSize: false, useMouseEvents: false, flippingTime: FLIP_MS, maxShadowOpacity: 0.5, startPage: fwd ? 0 : cols });
     pf.loadFromHTML(items);
     pf.getRender().safari = /AppleWebKit/.test(navigator.userAgent) && !/Chrom/.test(navigator.userAgent); // its own check needs "Safari" in the UA: home-screen apps have none
     pf.on('changeState', e => { if (e.data === 'read' && turn && turn.pf === pf) stopTurn(); });
     turn = { raf: 0, pf, step: () => { pf.getUI().removeHandlers(); pf.destroy(); } };
+    pf.mirror = mirror;
     return pf;
   }
   function setPage(p, animate = true) {
@@ -1997,7 +2007,7 @@ const Reflow = (() => {
     stopTurn();
     content.style.transform = `translateX(${-page * stride}px)`;
     if (animate && page !== from && !reduceMotion.matches) {
-      const pf = openFlip(from, page), next = page > from;
+      const pf = openFlip(from, page), next = page > from || pf.mirror;
       // on the book's first frame: before it, its clock reads 0 and an animation would count as long over
       requestAnimationFrame(() => { if (turn && turn.pf === pf) pf[next ? 'flipNext' : 'flipPrev']('bottom'); });
     }
@@ -2716,9 +2726,8 @@ h2{text-align:center;font-weight:normal;font-size:1.4em;margin:2.2em 0 1.2em}h2 
     return e.clientX > r.right - CORNER ? 1 : e.clientX < r.left + CORNER ? -1 : 0;
   }
   function foldTo(s, x, y) { // bring the leaf's corner to x px in from the edge it started at
-    const r = s.pf.getBoundsRect(), portrait = s.pf.getOrientation() === 'portrait'; // portrait: only the book's right half shows
-    const edge = s.dir > 0 ? r.left + r.width : r.left + (portrait ? r.pageWidth : 0);
-    s.pf.getFlipController().fold({ x: edge + x, y: y - pane.getBoundingClientRect().top });
+    const r = s.pf.getBoundsRect(), edge = s.dir > 0 || s.pf.mirror ? r.left + r.width : r.left;
+    s.pf.getFlipController().fold({ x: edge + (s.pf.mirror ? -x : x), y: y - pane.getBoundingClientRect().top });
   }
   stage.addEventListener('pointerdown', e => {
     if (!e.isPrimary || !isPaged()) return;

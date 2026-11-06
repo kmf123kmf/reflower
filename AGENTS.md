@@ -20,7 +20,7 @@ at the bottom (above the keyboard, `--kb`); picking a result folds the list away
 
 Page turns are StPageFlip's curl on a throwaway book (`openFlip`): the column strip stays the only real text, and `setPage` still
 moves it at once underneath. `flipPage` copies the blocks on a page into absolutely placed fragments that match the strip to the pixel,
-so the hand-over at the end of a turn doesn't jump. The text CSS is `:is(#content, .ftext)` so the copies get it. Mouse drags start at the
+so the hand-over at the end of a turn doesn't jump. Back turns in Page layout are forward turns in a mirrored book (`#flip.mirror`), hinged on the right. The text CSS is `:is(#content, .ftext)` so the copies get it. Mouse drags start at the
 page's corners (elsewhere a drag selects text). Reduced motion: no book; turns are instant and a swipe moves the strip.
 
 ## Layout
