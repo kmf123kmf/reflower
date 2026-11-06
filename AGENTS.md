@@ -37,6 +37,10 @@ page's corners (elsewhere a drag selects text). Reduced motion: no book; turns a
 - `tests/bench.html` – performance benchmark (needs `samples/real/pg1342.txt`).
 - `samples/real/` – optional real Project Gutenberg files for manual checks (not generated).
 
+## Working on this machine (Windows, Git Bash)
+- Don't embed long or quote-heavy scripts in shell commands (heredocs, `python -c`): write the script to a file, then run it with a one-line command.
+- Line endings differ: `index.html` and `README.md` are CRLF, `AGENTS.md` is LF. Scripted replacements need `newline=''` and matching line endings.
+
 ## Verification (no Node on this machine; use Python + headless Chrome)
 ```
 python tests/make_samples.py
