@@ -23,6 +23,8 @@ html[data-theme="dark"]  { color-scheme: dark; --bg:#111214; --paper:#1c1d20; --
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+/* no text autosizing: phones enlarge flowing text but not fixed-size boxes, so the page-turn copies came out smaller and wrapped differently */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
 
 /* ---------- toolbar ---------- */
@@ -1982,6 +1984,7 @@ const Reflow = (() => {
     const items = seq.flatMap(p => Array.from({ length: cols }, (_, c) => flipPage(p, c, pw, host)));
     const pf = new St.PageFlip(host, { width: pw, height: host.offsetHeight, autoSize: false, useMouseEvents: false, flippingTime: FLIP_MS, maxShadowOpacity: 0.5, startPage: to > from ? 0 : cols });
     pf.loadFromHTML(items);
+    pf.getRender().safari = /AppleWebKit/.test(navigator.userAgent) && !/Chrom/.test(navigator.userAgent); // its own check needs "Safari" in the UA: home-screen apps have none
     pf.on('changeState', e => { if (e.data === 'read' && turn && turn.pf === pf) stopTurn(); });
     turn = { raf: 0, pf, step: () => { pf.getUI().removeHandlers(); pf.destroy(); } };
     return pf;
